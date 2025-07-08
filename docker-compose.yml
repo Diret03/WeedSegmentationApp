@@ -1,0 +1,58 @@
+# 🌱 Docker Compose para Sistema de Segmentación de Malezas
+version: '3.8'
+
+services:
+  # Aplicación principal
+  weed-segmentation:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: weed-segmentation-app
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - MODEL_PATH=models/weed_segmenter_fpn_model_085_local.pth
+    volumes:
+      # Montar el modelo entrenado
+      - ./models:/app/models:ro
+      # Montar directorio de uploads (opcional para persistencia)
+      - ./uploads:/app/uploads
+      # Montar directorio de resultados (opcional para persistencia)
+      - ./results:/app/results
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - weed-network
+
+  # Nginx como proxy reverso (opcional para producción)
+  nginx:
+    image: nginx:alpine
+    container_name: weed-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # Para HTTPS (opcional)
+    depends_on:
+      - weed-segmentation
+    restart: unless-stopped
+    networks:
+      - weed-network
+
+networks:
+  weed-network:
+    driver: bridge
+
+volumes:
+  # Volúmenes para persistencia de datos
+  weed_uploads:
+  weed_results:
+  weed_models:

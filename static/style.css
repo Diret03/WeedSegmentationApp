@@ -1,0 +1,117 @@
+/* Custom styles for Weed Segmentation App */
+
+:root {
+    --primary-green: #28a745;
+    --secondary-green: #20c997;
+    --accent-blue: #007bff;
+    --light-gray: #f8f9fa;
+    --border-color: #dee2e6;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f7fa;
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card {
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.drop-zone {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.drop-zone::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    transition: left 0.5s;
+}
+
+.drop-zone:hover::before {
+    left: 100%;
+}
+
+.image-comparison {
+    background: white;
+    transition: transform 0.2s ease;
+}
+
+.image-comparison:hover {
+    transform: scale(1.02);
+}
+
+.btn {
+    border-radius: 25px;
+    font-weight: 500;
+    padding: 10px 25px;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.stats-card {
+    background: linear-gradient(135deg, var(--primary-green) 0%, var(--secondary-green) 100%);
+    box-shadow: 0 8px 32px rgba(40, 167, 69, 0.3);
+}
+
+.loading-spinner {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    padding: 30px;
+    margin: 20px 0;
+}
+
+.error-message {
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    font-weight: 500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .display-6 {
+        font-size: 2rem;
+    }
+
+    .drop-zone {
+        padding: 40px 15px;
+    }
+
+    .btn-lg {
+        padding: 8px 20px;
+        font-size: 1rem;
+    }
+
+    .stats-card {
+        margin-top: 15px;
+        padding: 15px;
+    }
+
+    .stats-card .row > div {
+        margin-bottom: 15px;
+    }
+}

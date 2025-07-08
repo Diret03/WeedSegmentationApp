@@ -80,11 +80,9 @@ models/
 └── weed_segmenter_fpn_model_085_local.pth
 ```
 
-> **Nota**: El modelo debe ser entrenado previamente o descargado desde el repositorio de modelos.
 
 ## 🏃‍♂️ Ejecución
 
-### Modo de Desarrollo
 
 ```bash
 python app.py
@@ -92,13 +90,6 @@ python app.py
 
 La aplicación estará disponible en: `http://localhost:5000`
 
-### Modo de Producción
-
-```bash
-# Usando Gunicorn
-pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 app:app
-```
 
 ## 📁 Estructura del Proyecto
 
@@ -249,5 +240,5 @@ docker-compose down
 
 ## 👥 Autores
 
-- **Tu Nombre** - Desarrollo principal - [@Diret03](https://github.com/Diret03)
+- Desarrollo principal - [@Diret03](https://github.com/Diret03)
 

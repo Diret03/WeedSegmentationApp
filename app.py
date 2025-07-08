@@ -43,19 +43,29 @@ def upload_file():
         file.save(filepath)
 
         try:
+            print(f"📁 Archivo guardado: {filepath}")
+            print(f"📊 Tamaño del archivo: {os.path.getsize(filepath) / 1024 / 1024:.2f} MB")
+            
             # Run segmentation
+            print("🧠 Iniciando segmentación...")
             mask = segmentation_model.predict(filepath)
+            print("✅ Segmentación completada")
 
             # Calculate class statistics
+            print("📊 Calculando estadísticas...")
             class_stats = segmentation_model.calculate_class_statistics(mask)
 
             # Create overlay visualization with animation frames
+            print("🎨 Generando visualización...")
             result_path, animation_frames = create_weed_overlay(filepath, mask, filename)
 
             # Convert images to base64 for frontend
+            print("🔄 Convirtiendo imágenes a base64...")
             original_b64 = image_to_base64(filepath)
             result_b64 = image_to_base64(result_path)
 
+            print("✅ Procesamiento completado exitosamente")
+            
             return jsonify({
                 'success': True,
                 'original_image': original_b64,
@@ -68,6 +78,9 @@ def upload_file():
             })
 
         except Exception as e:
+            print(f"❌ Error en el procesamiento: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return jsonify({'error': f'Error en el procesamiento: {str(e)}'}), 500
 
     return jsonify({'error': 'Tipo de archivo no válido'}), 400
@@ -84,6 +97,8 @@ def create_weed_overlay(image_path, mask, filename):
     # Load original image
     image = cv2.imread(image_path)
     height, width = image.shape[:2]
+    
+    print(f"📏 Procesando imagen: {width}x{height}")
 
     # Create colored overlay based on segmentation classes
     overlay = np.zeros_like(image)
@@ -100,10 +115,12 @@ def create_weed_overlay(image_path, mask, filename):
     # Aplicar overlay a toda la imagen
     result = cv2.addWeighted(image, beta, overlay, alpha, 0)
 
-    # ======= NUEVO: Generar frames para animación =======
-    num_frames = 20  # Número de frames para la animación
+    # ======= OPTIMIZADO: Generar frames para animación con menos memoria =======
+    num_frames = 10  # Reducido de 20 a 10 frames para ahorrar memoria
     animation_frames = []
 
+    print(f"🎬 Generando {num_frames} frames de animación...")
+    
     # Crear máscara de revelación progresiva (barrido de izquierda a derecha)
     for frame_idx in range(num_frames + 1):
         # Calcular el porcentaje de revelación (0 a 1)
@@ -131,11 +148,19 @@ def create_weed_overlay(image_path, mask, filename):
         # Convertir a base64 para envío al frontend
         frame_b64 = image_to_base64(frame_path)
         animation_frames.append(frame_b64)
+        
+        # Limpiar el frame de memoria
+        del frame
+        
+        if frame_idx % 3 == 0:  # Log cada 3 frames
+            print(f"  📄 Frame {frame_idx}/{num_frames} generado")
 
     # Save final result
     result_filename = f"result_{filename}"
     result_path = os.path.join(app.config['RESULTS_FOLDER'], result_filename)
     cv2.imwrite(result_path, result)
+    
+    print(f"✅ Animación completada: {len(animation_frames)} frames generados")
 
     return result_path, animation_frames
 

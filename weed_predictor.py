@@ -256,7 +256,12 @@ class WeedSegmentationPredictor:
 
             # Cargar los pesos del modelo
             print("🔄 Cargando checkpoint del modelo...")
-            checkpoint = torch.load(self.model_path, map_location=self.device)
+            
+            # Configurar dispositivo para CPU para evitar problemas de memoria GPU
+            device = torch.device('cpu')
+            self.device = device
+            
+            checkpoint = torch.load(self.model_path, map_location=device)
 
             # El modelo del script mejorado guarda solo el state_dict directamente
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
@@ -276,6 +281,11 @@ class WeedSegmentationPredictor:
             self.model.eval()
             self.model.training = False  # Importante: modo evaluación
 
+            # Configurar optimizaciones para inferencia
+            torch.set_grad_enabled(False)
+            if hasattr(torch.jit, 'optimize_for_inference'):
+                torch.jit.optimize_for_inference(self.model)
+
             print(f"✅ Modelo WeedSegmenterFPN mejorado cargado exitosamente en {self.device}")
             print(f"📏 Tamaño de entrada: {self.input_size}")
             print("📊 Clases detectadas:", list(CLASS_NAMES_ES.values()))
@@ -284,6 +294,7 @@ class WeedSegmentationPredictor:
             print("  - ASPP (Atrous Spatial Pyramid Pooling)")
             print("  - Supervisión profunda con cabezales auxiliares")
             print("  - EfficientNetV2-S como backbone")
+            print("  - Optimizado para inferencia CPU")
 
         except Exception as e:
             print(f"❌ Error al cargar el modelo: {str(e)}")
@@ -311,30 +322,60 @@ class WeedSegmentationPredictor:
 
         try:
             print(f"🔍 Iniciando predicción para: {os.path.basename(image_path)}")
+            
+            # Limpiar memoria antes de procesar
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Monitorear memoria
+            import psutil
+            process = psutil.Process(os.getpid())
+            memory_before = process.memory_info().rss / 1024 / 1024  # MB
+            print(f"📊 Memoria antes del procesamiento: {memory_before:.1f} MB")
 
             input_tensor, original_size = self.preprocess_image(image_path)
+            print(f"📏 Tensor de entrada: {input_tensor.shape}")
 
             with torch.no_grad():
+                print("🧠 Ejecutando modelo de segmentación...")
                 outputs = self.model(input_tensor)
+                print(f"📤 Salida del modelo: {outputs.shape}")
+                
                 probabilities = F.softmax(outputs, dim=1)
                 predicted_mask = torch.argmax(probabilities, dim=1)
                 mask = predicted_mask.cpu().numpy()[0]
+                
+                # Liberar memoria del GPU
+                del outputs, probabilities, predicted_mask, input_tensor
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
                 # Redimensionar a tamaño original
                 original_image = cv2.imread(image_path)
                 original_height, original_width = original_image.shape[:2]
+                print(f"📐 Redimensionando de {mask.shape} a {original_height}x{original_width}")
+                
                 mask_resized = cv2.resize(mask.astype(np.uint8),
                                         (original_width, original_height),
                                         interpolation=cv2.INTER_NEAREST)
 
                 unique_classes = np.unique(mask_resized)
                 detected_classes = [CLASS_NAMES[cls] for cls in unique_classes if cls in CLASS_NAMES]
+                
+                # Monitorear memoria después
+                memory_after = process.memory_info().rss / 1024 / 1024  # MB
+                print(f"📊 Memoria después del procesamiento: {memory_after:.1f} MB")
+                print(f"📊 Incremento de memoria: {memory_after - memory_before:.1f} MB")
+                
                 print(f"✅ Predicción completada. Clases detectadas: {detected_classes}")
 
                 return mask_resized
 
         except Exception as e:
             print(f"❌ Error durante la predicción: {str(e)}")
+            print("🔄 Traceback completo:")
+            import traceback
+            traceback.print_exc()
             print("🔄 Usando datos simulados como respaldo")
             return self._create_dummy_mask(image_path)
 

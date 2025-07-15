@@ -19,9 +19,9 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
 
-# Initialize model using the separated predictor with the new improved model
+# Initialize model using the separated predictor with the correct model
 print("🚀 Inicializando modelo de segmentación de malezas WeedSegmenter mejorado...")
-segmentation_model = WeedSegmentationPredictor(model_path='models/weed_segmenter_fpn_model_085_local.pth')
+segmentation_model = WeedSegmentationPredictor(model_path='models/weed_segmentation_087_model.pth')
 
 @app.route('/')
 def index():

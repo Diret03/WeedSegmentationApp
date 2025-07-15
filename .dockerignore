@@ -80,11 +80,6 @@ screenshots/
 .env.local
 config.local.py
 
-# Archivos grandes que no son necesarios
-*.pth
-models/*
-!models/.gitkeep
-
 # Archivos de backup
 *.bak
 *.backup

@@ -1,96 +1,101 @@
-# 🌱 Dockerfile para Sistema de Segmentación de Malezas en Cultivos de Papa
-# Imagen base optimizada para PyTorch y aplicaciones de ML
-FROM python:3.9-slim
+FROM python:3.11-slim
+LABEL authors="Diret"
+LABEL description="Weed Segmentation Flask PyTorch Application"
 
-# Información del mantenedor
-LABEL maintainer="tu-email@ejemplo.com"
-LABEL description="Sistema de segmentación automática de malezas en cultivos de papa"
-LABEL version="1.0"
-
-# Variables de entorno para optimización
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    FLASK_APP=app.py \
-    FLASK_ENV=production \
-    MODEL_PATH=models/weed_segmenter_fpn_model_085_local.pth
-
-# Instalar dependencias del sistema necesarias para OpenCV y PyTorch
-RUN apt-get update && apt-get install -y \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libglib2.0-0 \
-    libgtk-3-dev \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libv4l-dev \
-    libxvidcore-dev \
-    libx264-dev \
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
-    libatlas-base-dev \
-    gfortran \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Crear usuario no-root para seguridad
-RUN useradd --create-home --shell /bin/bash app && \
-    mkdir -p /app && \
-    chown -R app:app /app
-
-# Establecer directorio de trabajo
+# Set working directory
 WORKDIR /app
 
-# Copiar requirements primero para aprovechar cache de Docker
-COPY requirements.txt .
-
-# Instalar dependencias de Python
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Instalar Node.js para Tailwind CSS
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-    apt-get install -y nodejs && \
+# Install system dependencies required for OpenCV and PyTorch
+RUN apt-get update && \
+    apt-get install -y \
+        nodejs \
+        npm \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender-dev \
+        libgomp1 \
+        libgtk-3-0 \
+        libavcodec-dev \
+        libavformat-dev \
+        libswscale-dev \
+        libv4l-dev \
+        libxvidcore-dev \
+        libx264-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff-dev \
+        libatlas-base-dev \
+        gfortran \
+        wget \
+        curl \
+        libgl1-mesa-glx \
+        libglib2.0-0 \
+        libfontconfig1 \
+        libxrender1 \
+        libxtst6 \
+        libxi6 \
+        libxrandr2 \
+        libasound2 \
+        --no-install-recommends && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copiar package.json para dependencias de Node.js
-COPY package.json .
+# Copy Python requirements first for better caching
+COPY requirements.txt .
+
+# Create a custom requirements file with opencv-python-headless instead of opencv-python
+RUN sed 's/opencv-python==/opencv-python-headless==/g' requirements.txt > requirements_headless.txt
+
+# Install Python dependencies with optimizations for PyTorch
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements_headless.txt
+
+# Copy Node.js dependencies
+COPY package.json package-lock.json* ./
+
+# Install Node.js dependencies (TailwindCSS)
 RUN npm install
 
-# Copiar código de la aplicación
-COPY . .
+# Create necessary directories
+RUN mkdir -p uploads results models static templates
 
-# Compilar CSS con Tailwind
-RUN npx tailwindcss -i ./static/src/input.css -o ./static/dist/output.css --minify || \
-    echo "Tailwind CSS compilation skipped - using existing CSS"
+# Copy ALL application files (including models) BEFORE switching to non-root user
+COPY app.py weed_predictor.py ./
+COPY appTest.png ./
 
-# Crear directorios necesarios
-RUN mkdir -p uploads results models static/dist && \
-    chown -R app:app /app
+# Copy models directory with explicit verification
+COPY models/ ./models/
+RUN ls -la ./models/ && echo "Models copied successfully"
 
-# Cambiar al usuario no-root
+# Copy static and templates directories
+COPY static/ ./static/
+COPY templates/ ./templates/
+
+# Set environment variables for better PyTorch performance and OpenCV
+ENV PYTHONUNBUFFERED=1
+ENV TORCH_HOME=/app/.torch
+ENV OMP_NUM_THREADS=1
+ENV QT_QPA_PLATFORM=offscreen
+ENV DISPLAY=:99
+
+# Create non-root user and set permissions AFTER copying all files
+RUN useradd --create-home --shell /bin/bash app && \
+    chown -R app:app /app && \
+    chmod -R 755 /app/models
+
 USER app
 
-# Verificar que los archivos críticos existen
-RUN ls -la /app/ && \
-    echo "✅ Aplicación Flask encontrada" && \
-    ls -la /app/models/ || echo "⚠️  Directorio models vacío - asegúrate de montar el modelo" && \
-    ls -la /app/static/ || echo "⚠️  Directorio static no encontrado"
+# Verify models are accessible
+RUN ls -la models/ || echo "Models directory not found"
 
-# Exponer puerto
+# Expose the Flask port
 EXPOSE 5000
 
-# Comando de health check
+# Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:5000/ || exit 1
+    CMD curl -f http://localhost:5000/ || exit 1
 
-# Comando por defecto - usar Gunicorn para producción
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--max-requests", "1000", "--preload", "app:app"]
-
-# Comando alternativo para desarrollo (comentado)
-# CMD ["python", "app.py"]
+# Use gunicorn for production
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "120", "app:app"]

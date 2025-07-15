@@ -221,7 +221,7 @@ class WeedSegmentationPredictor:
     """
     Clase principal para predicción de segmentación de malezas
     """
-    def __init__(self, model_path='models/weed_segmenter_fpn_model_085_local.pth'):
+    def __init__(self, model_path='models/weed_segmentation_087_model.pth'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_path = model_path
         self.model = None

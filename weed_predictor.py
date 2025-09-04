@@ -1,7 +1,7 @@
 """
 Weed Segmentation Predictor
-Script independiente para la predicción de segmentación de malezas en cultivos de papa
-Separado de la lógica de la aplicación Flask para mejor modularidad
+Standalone script for predicting weed segmentation in potato crops.
+Separated from the Flask application logic for better modularity.
 """
 
 import os
@@ -14,37 +14,37 @@ import torch.nn.functional as F
 from torchvision import transforms
 import timm
 
-# Definición de clases y colores para segmentación de malezas en cultivos de papa
+# Class definitions and colors for weed segmentation in potato crops
 CLASS_NAMES = {
     0: 'background',
-    1: 'lengua_vaca',
-    2: 'diente_leon',
+    1: 'cow_tongue',
+    2: 'dandelion',
     3: 'kikuyo',
-    4: 'otras_malezas',
-    5: 'papa'
+    4: 'other_weeds',
+    5: 'potato'
 }
 
-# Colores en formato BGR para OpenCV
+# Colors in BGR format for OpenCV
 CLASS_COLORS = {
-    0: [0, 0, 0],         # Gris oscuro - background
-    1: [68, 68, 239],     # Rojo - lengua de vaca
-    2: [11, 158, 245],    # Naranja/Amarillo - diente de león
-    3: [246, 92, 139],    # Púrpura - kikuyo
-    4: [153, 72, 236],    # Rosa/Magenta - otras malezas
-    5: [129, 185, 16]     # Verde esmeralda - papa
+    0: [0, 0, 0],           # Black - background
+    1: [255, 0, 0],         # Blue - Cow-tongue
+    2: [0, 165, 255],       # Orange - Dandelion
+    3: [0, 255, 255],       # Yellow - Kikuyo
+    4: [128, 0, 128],       # Purple - Other Weeds
+    5: [0, 128, 0]          # Green - Potato
 }
 
-CLASS_NAMES_ES = {
-    'background': 'Fondo',
-    'lengua_vaca': 'Lengua de Vaca',
-    'diente_leon': 'Diente de León',
+CLASS_NAMES_EN = {
+    'background': 'Background',
+    'cow_tongue': 'Cow-tongue',
+    'dandelion': 'Dandelion',
     'kikuyo': 'Kikuyo',
-    'otras_malezas': 'Otras Malezas',
-    'papa': 'Papa'
+    'other_weeds': 'Other Weeds',
+    'potato': 'Potato'
 }
 
 # ==============================================================================
-# ARQUITECTURA DEL MODELO FPN
+# FPN MODEL ARCHITECTURE
 # ==============================================================================
 
 class ChannelAttention(nn.Module):
@@ -167,7 +167,7 @@ class DecoderBlock(nn.Module):
 class WeedSegmenterFPN(nn.Module):
     def __init__(self, num_classes=6):
         super(WeedSegmenterFPN, self).__init__()
-        self.training = False # Por defecto en modo eval para inferencia
+        self.training = False # Default to eval mode for inference
 
         self.backbone = timm.create_model(
             'tf_efficientnetv2_s.in21k',
@@ -219,7 +219,7 @@ class WeedSegmenterFPN(nn.Module):
 
 class WeedSegmentationPredictor:
     """
-    Clase principal para predicción de segmentación de malezas
+    Main class for weed segmentation prediction
     """
     def __init__(self, model_path='models/weed_segmentation_087_model.pth'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -227,7 +227,7 @@ class WeedSegmentationPredictor:
         self.model = None
         self.input_size = (256, 256)
 
-        # Transformaciones exactas del entrenamiento mejorado
+        # Exact transformations from the improved training
         self.transform = transforms.Compose([
             transforms.Resize(self.input_size, interpolation=transforms.InterpolationMode.NEAREST),
             transforms.ToTensor(),
@@ -237,13 +237,13 @@ class WeedSegmentationPredictor:
         self.load_model()
 
     def load_model(self):
-        """Cargar el modelo de segmentación entrenado con el script mejorado"""
+        """Load the trained segmentation model with the improved script"""
         try:
-            print(f"🔄 Cargando modelo WeedSegmenterFPN mejorado desde: {self.model_path}")
+            print(f"🔄 Loading improved WeedSegmenterFPN model from: {self.model_path}")
 
             if not os.path.exists(self.model_path):
-                print(f"❌ Error: No se encontró el archivo del modelo en {self.model_path}")
-                print("📝 Modelos disponibles en la carpeta 'models':")
+                print(f"❌ Error: Model file not found at {self.model_path}")
+                print("📝 Available models in the 'models' folder:")
                 models_dir = os.path.dirname(self.model_path)
                 if os.path.exists(models_dir):
                     for file in os.listdir(models_dir):
@@ -251,50 +251,50 @@ class WeedSegmentationPredictor:
                             print(f"  - {file}")
                 return
 
-            # Crear instancia del modelo con la arquitectura mejorada
+            # Create an instance of the model with the improved architecture
             self.model = WeedSegmenterFPN(num_classes=6)
 
-            # Cargar los pesos del modelo
-            print("🔄 Cargando checkpoint del modelo...")
+            # Load the model weights
+            print("🔄 Loading model checkpoint...")
             checkpoint = torch.load(self.model_path, map_location=self.device)
 
-            # El modelo del script mejorado guarda solo el state_dict directamente
+            # The model from the improved script saves only the state_dict directly
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                # Si es un checkpoint completo
+                # If it's a full checkpoint
                 self.model.load_state_dict(checkpoint['model_state_dict'])
-                print(f"✅ Checkpoint completo cargado")
+                print(f"✅ Full checkpoint loaded")
                 if 'epoch' in checkpoint:
-                    print(f"📊 Época: {checkpoint['epoch']}")
+                    print(f"📊 Epoch: {checkpoint['epoch']}")
                 if 'best_val_miou' in checkpoint:
-                    print(f"📊 Mejor mIoU: {checkpoint['best_val_miou']:.4f}")
+                    print(f"📊 Best mIoU: {checkpoint['best_val_miou']:.4f}")
             else:
-                # Si es solo el state_dict (como guarda el script mejorado)
+                # If it's just the state_dict (as saved by the improved script)
                 self.model.load_state_dict(checkpoint)
-                print(f"✅ State dict cargado directamente")
+                print(f"✅ State dict loaded directly")
 
             self.model.to(self.device)
             self.model.eval()
-            self.model.training = False  # Importante: modo evaluación
+            self.model.training = False  # Important: evaluation mode
 
-            print(f"✅ Modelo WeedSegmenterFPN mejorado cargado exitosamente en {self.device}")
-            print(f"📏 Tamaño de entrada: {self.input_size}")
-            print("📊 Clases detectadas:", list(CLASS_NAMES_ES.values()))
-            print("🎯 Modelo optimizado con:")
-            print("  - Arquitectura FPN con módulos de atención")
+            print(f"✅ Improved WeedSegmenterFPN model loaded successfully on {self.device}")
+            print(f"📏 Input size: {self.input_size}")
+            print("📊 Detected classes:", list(CLASS_NAMES_EN.values()))
+            print("🎯 Model optimized with:")
+            print("  - FPN architecture with attention modules")
             print("  - ASPP (Atrous Spatial Pyramid Pooling)")
-            print("  - Supervisión profunda con cabezales auxiliares")
-            print("  - EfficientNetV2-S como backbone")
+            print("  - Deep supervision with auxiliary heads")
+            print("  - EfficientNetV2-S as backbone")
 
         except Exception as e:
-            print(f"❌ Error al cargar el modelo: {str(e)}")
-            print("📋 Detalles del error:")
+            print(f"❌ Error loading model: {str(e)}")
+            print("📋 Error details:")
             import traceback
             print(traceback.format_exc())
-            print("🔄 Usando modo demo con datos simulados")
+            print("🔄 Using demo mode with simulated data")
             self.model = None
 
     def preprocess_image(self, image_path):
-        """Preprocesar imagen para el modelo"""
+        """Preprocess image for the model"""
         image = Image.open(image_path).convert('RGB')
         original_size = image.size
         input_tensor = self.transform(image).unsqueeze(0)
@@ -302,15 +302,15 @@ class WeedSegmentationPredictor:
 
     def predict(self, image_path):
         """
-        Predecir segmentación usando el modelo entrenado
-        Retorna máscara de segmentación como numpy array con valores 0-5
+        Predict segmentation using the trained model
+        Returns segmentation mask as a numpy array with values 0-5
         """
         if self.model is None:
-            print("⚠️ Modelo no disponible, usando datos simulados")
+            print("⚠️ Model not available, using simulated data")
             return self._create_dummy_mask(image_path)
 
         try:
-            print(f"🔍 Iniciando predicción para: {os.path.basename(image_path)}")
+            print(f"🔍 Starting prediction for: {os.path.basename(image_path)}")
 
             input_tensor, original_size = self.preprocess_image(image_path)
 
@@ -320,7 +320,7 @@ class WeedSegmentationPredictor:
                 predicted_mask = torch.argmax(probabilities, dim=1)
                 mask = predicted_mask.cpu().numpy()[0]
 
-                # Redimensionar a tamaño original
+                # Resize to original size
                 original_image = cv2.imread(image_path)
                 original_height, original_width = original_image.shape[:2]
                 mask_resized = cv2.resize(mask.astype(np.uint8),
@@ -329,37 +329,37 @@ class WeedSegmentationPredictor:
 
                 unique_classes = np.unique(mask_resized)
                 detected_classes = [CLASS_NAMES[cls] for cls in unique_classes if cls in CLASS_NAMES]
-                print(f"✅ Predicción completada. Clases detectadas: {detected_classes}")
+                print(f"✅ Prediction completed. Detected classes: {detected_classes}")
 
                 return mask_resized
 
         except Exception as e:
-            print(f"❌ Error durante la predicción: {str(e)}")
-            print("🔄 Usando datos simulados como respaldo")
+            print(f"❌ Error during prediction: {str(e)}")
+            print("🔄 Using simulated data as fallback")
             return self._create_dummy_mask(image_path)
 
     def _create_dummy_mask(self, image_path):
-        """Crear máscara simulada cuando el modelo no está disponible"""
+        """Create a simulated mask when the model is not available"""
         image = cv2.imread(image_path)
         height, width = image.shape[:2]
         mask = np.zeros((height, width), dtype=np.uint8)
 
-        # Simular detecciones realistas
-        cv2.circle(mask, (width//4, height//4), 40, 1, -1)  # Lengua de vaca
+        # Simulate realistic detections
+        cv2.circle(mask, (width//4, height//4), 40, 1, -1)  # Cow-tongue
         cv2.circle(mask, (3*width//4, height//3), 25, 1, -1)
-        cv2.ellipse(mask, (width//3, 2*height//3), (30, 20), 0, 0, 360, 2, -1)  # Diente de león
+        cv2.ellipse(mask, (width//3, 2*height//3), (30, 20), 0, 0, 360, 2, -1)  # Dandelion
         cv2.ellipse(mask, (2*width//3, height//4), (25, 15), 45, 0, 360, 2, -1)
         cv2.rectangle(mask, (width//6, height//2), (width//6 + 50, height//2 + 40), 3, -1)  # Kikuyo
-        cv2.circle(mask, (5*width//6, 2*height//3), 20, 4, -1)  # Otras malezas
-        cv2.ellipse(mask, (width//2, height//2), (60, 80), 0, 0, 360, 5, -1)  # Papa
+        cv2.circle(mask, (5*width//6, 2*height//3), 20, 4, -1)  # Other weeds
+        cv2.ellipse(mask, (width//2, height//2), (60, 80), 0, 0, 360, 5, -1)  # Potato
         cv2.ellipse(mask, (width//5, 3*height//4), (40, 50), 30, 0, 360, 5, -1)
         cv2.ellipse(mask, (4*width//5, height//6), (35, 45), -20, 0, 360, 5, -1)
 
-        print("⚠️ Usando máscara simulada para demostración")
+        print("⚠️ Using simulated mask for demonstration")
         return mask
 
     def calculate_class_statistics(self, mask):
-        """Calcula estadísticas detalladas por clase de la máscara de segmentación"""
+        """Calculates detailed statistics per class from the segmentation mask"""
         total_pixels = mask.size
         stats = {}
 
@@ -368,67 +368,67 @@ class WeedSegmentationPredictor:
             percentage = (class_pixels / total_pixels) * 100
             stats[class_name] = percentage
 
-        # Estadísticas adicionales específicas para agricultura
-        weed_classes = ['lengua_vaca', 'diente_leon', 'kikuyo', 'otras_malezas']
+        # Additional agriculture-specific statistics
+        weed_classes = ['cow_tongue', 'dandelion', 'kikuyo', 'other_weeds']
         weed_pixels = sum(stats[weed] for weed in weed_classes)
 
-        # Contar tipos de malezas detectadas (con umbral mínimo del 0.1%)
+        # Count detected weed types (with a minimum threshold of 0.1%)
         detected_weed_types = len([weed for weed in weed_classes if stats[weed] > 0.1])
 
-        # Métricas adicionales
+        # Additional metrics
         stats['total_weeds'] = detected_weed_types
-        stats['potato_area'] = f"{stats['papa']:.1f}%"
+        stats['potato_area'] = f"{stats['potato']:.1f}%"
         stats['weed_coverage'] = f"{weed_pixels:.1f}%"
-        stats['crop_health_ratio'] = stats['papa'] / (weed_pixels + 0.001)
+        stats['crop_health_ratio'] = stats['potato'] / (weed_pixels + 0.001)
 
         return stats
 
     def create_overlay_visualization(self, image_path, mask, alpha=0.6, beta=0.4):
         """
-        Crear visualización overlay de los resultados de segmentación
+        Create an overlay visualization of the segmentation results
         """
         image = cv2.imread(image_path)
         overlay = np.zeros_like(image)
 
-        # Aplicar colores a todas las clases
+        # Apply colors to all classes
         for class_id, color in CLASS_COLORS.items():
             class_mask = mask == class_id
             overlay[class_mask] = color
 
-        # Combinar imagen original con overlay
+        # Combine original image with overlay
         result = cv2.addWeighted(image, beta, overlay, alpha, 0)
         return result
 
 def main():
-    """Función de ejemplo para uso independiente del predictor"""
-    # Ejemplo de uso del predictor
+    """Example function for standalone use of the predictor"""
+    # Example of using the predictor
     predictor = WeedSegmentationPredictor()
 
-    # Ruta de imagen de prueba (cambiar por una imagen real)
+    # Test image path (change to a real image)
     test_image = "appTest.png"
 
     if os.path.exists(test_image):
-        print(f"🔍 Procesando imagen: {test_image}")
+        print(f"🔍 Processing image: {test_image}")
 
-        # Realizar predicción
+        # Perform prediction
         mask = predictor.predict(test_image)
 
-        # Calcular estadísticas
+        # Calculate statistics
         stats = predictor.calculate_class_statistics(mask)
 
-        print("\n📊 Estadísticas de segmentación:")
+        print("\n📊 Segmentation Statistics:")
         for class_name, percentage in stats.items():
-            if class_name in CLASS_NAMES_ES:
-                print(f"  {CLASS_NAMES_ES[class_name]}: {percentage:.2f}%")
+            if class_name in CLASS_NAMES_EN:
+                print(f"  {CLASS_NAMES_EN[class_name]}: {percentage:.2f}%")
 
-        # Crear visualización
+        # Create visualization
         overlay = predictor.create_overlay_visualization(test_image, mask)
 
-        # Guardar resultado
+        # Save result
         cv2.imwrite("prediction_result.jpg", overlay)
-        print("✅ Resultado guardado como 'prediction_result.jpg'")
+        print("✅ Result saved as 'prediction_result.jpg'")
     else:
-        print(f"❌ No se encontró la imagen de prueba: {test_image}")
+        print(f"❌ Test image not found: {test_image}")
 
 if __name__ == "__main__":
     main()

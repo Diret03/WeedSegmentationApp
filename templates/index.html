@@ -83,12 +83,12 @@
         }
 
         /* Colors for segmentation classes */
-        .color-background { background-color: #000000; } /* Darker gray for visibility */
-        .color-lengua-vaca { background-color: #ef4444; } /* Red */
-        .color-diente-leon { background-color: #f59e0b; } /* Orange/Yellow */
-        .color-kikuyo { background-color: #8b5cf6; } /* Purple */
-        .color-otras-malezas { background-color: #ec4899; } /* Pink/Magenta */
-        .color-papa { background-color: #10b981; } /* Emerald green */
+        .color-background { background-color: #000000; } /* Black */
+        .color-cow-tongue { background-color: #0000FF; } /* Blue */
+        .color-dandelion { background-color: #FFA500; } /* Orange */
+        .color-kikuyo { background-color: #FFFF00; } /* Yellow */
+        .color-other-weeds { background-color: #800080; } /* Purple */
+        .color-potato { background-color: #008000; } /* Green */
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -125,32 +125,26 @@
                         <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
                             <div class="w-8 h-8 rounded-full color-background mb-2"></div>
                             <span class="text-sm font-medium text-gray-700">Background</span>
-                            <span class="text-xs text-gray-500">(Background)</span>
                         </div>
                         <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-lengua-vaca mb-2"></div>
+                            <div class="w-8 h-8 rounded-full color-cow-tongue mb-2"></div>
                             <span class="text-sm font-medium text-gray-700">Cow-tongue</span>
-                            <span class="text-xs text-gray-500">(Rumex crispus)</span>
                         </div>
                         <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-diente-leon mb-2"></div>
+                            <div class="w-8 h-8 rounded-full color-dandelion mb-2"></div>
                             <span class="text-sm font-medium text-gray-700">Dandelion</span>
-                            <span class="text-xs text-gray-500">(Taraxacum officinale)</span>
                         </div>
                         <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
                             <div class="w-8 h-8 rounded-full color-kikuyo mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Kikuyu</span>
-                            <span class="text-xs text-gray-500">(Pennisetum clandestinum)</span>
+                            <span class="text-sm font-medium text-gray-700">Kikuyo</span>
                         </div>
                         <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-otras-malezas mb-2"></div>
+                            <div class="w-8 h-8 rounded-full color-other-weeds mb-2"></div>
                             <span class="text-sm font-medium text-gray-700">Other Weeds</span>
-                            <span class="text-xs text-gray-500">(Other weeds)</span>
                         </div>
                         <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-papa mb-2"></div>
+                            <div class="w-8 h-8 rounded-full color-potato mb-2"></div>
                             <span class="text-sm font-medium text-gray-700">Potato</span>
-                            <span class="text-xs text-gray-500">(Solanum tuberosum)</span>
                         </div>
                     </div>
                 </div>
@@ -286,21 +280,21 @@
 
         // Color definition for each class
         const classColors = {
-            'background': '#000000',  // CORRECTED: Dark gray to match backend
-            'lengua_vaca': '#ef4444',
-            'diente_leon': '#f59e0b',
-            'kikuyo': '#8b5cf6',
-            'otras_malezas': '#ec4899',
-            'papa': '#10b981'
+            'background': '#000000',  // Black
+            'cow_tongue': '#0000FF',  // Blue
+            'dandelion': '#FFA500',  // Orange
+            'kikuyo': '#FFFF00',  // Yellow
+            'other_weeds': '#800080',  // Purple
+            'potato': '#008000'  // Green
         };
 
         const classNames = {
             'background': 'Background',
-            'lengua_vaca': 'Cow-tongue',
-            'diente_leon': 'Dandelion',
-            'kikuyo': 'Kikuyu',
-            'otras_malezas': 'Other Weeds',
-            'papa': 'Potato'
+            'cow_tongue': 'Cow-tongue',
+            'dandelion': 'Dandelion',
+            'kikuyo': 'Kikuyo',
+            'other_weeds': 'Other Weeds',
+            'potato': 'Potato'
         };
 
         const dropZone = document.getElementById('dropZone');

@@ -8,8 +8,7 @@ from io import BytesIO
 import uuid
 
 # Importar la lógica de predicción desde el script separado
-from weed_predictor import WeedSegmentationPredictor, CLASS_COLORS, CLASS_NAMES_ES
-
+from weed_predictor import WeedSegmentationPredictor, CLASS_COLORS, CLASS_NAMES
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['RESULTS_FOLDER'] = 'results'
@@ -63,8 +62,8 @@ def upload_file():
                 'animation_frames': animation_frames,  # NUEVO: Frames para animación
                 'filename': filename,
                 'class_stats': class_stats,
-                'detected_classes': [CLASS_NAMES_ES[cls] for cls, pct in class_stats.items()
-                                   if cls in CLASS_NAMES_ES and pct > 0.1]
+                'detected_classes': [CLASS_NAMES[cls] for cls, pct in class_stats.items()
+                                   if cls in CLASS_NAMES and pct > 0.1]
             })
 
         except Exception as e:
@@ -153,5 +152,5 @@ def download_file(filename):
 
 if __name__ == '__main__':
     print("🌱 Iniciando aplicación de segmentación de malezas en cultivos de papa")
-    print("📊 Clases detectadas:", list(CLASS_NAMES_ES.values()))
+    print("📊 Clases detectadas:", list(CLASS_NAMES.values()))
     app.run(debug=True, host='0.0.0.0', port=5000)

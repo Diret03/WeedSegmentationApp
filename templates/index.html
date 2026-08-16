@@ -82,6 +82,38 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
+        /* Progressive reveal of the segmentation overlay, done in the browser
+           instead of shipping one rendered frame per step from the server */
+        .reveal-stack {
+            position: relative;
+        }
+
+        .reveal-stack img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .reveal-overlay {
+            position: absolute;
+            inset: 0;
+            clip-path: circle(0% at 50% 50%);
+        }
+
+        .reveal-overlay.revealing {
+            transition: clip-path 2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .reveal-overlay.revealed {
+            clip-path: circle(75% at 50% 50%);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reveal-overlay.revealing {
+                transition: none;
+            }
+        }
+
         /* Colors for segmentation classes */
         .color-background { background-color: #000000; } /* Black */
         .color-cow-tongue { background-color: #0000FF; } /* Blue */
@@ -156,7 +188,7 @@
                     <i class="fas fa-cloud-upload-alt text-6xl text-blue-500 mb-6"></i>
                     <h3 class="text-2xl font-semibold text-gray-800 mb-2">Drag and drop your crop image here</h3>
                     <p class="text-gray-600 mb-2">or click to browse files</p>
-                    <p class="text-sm text-gray-500">Supported formats: JPG, PNG, GIF, BMP (Max. 2MB, 256x256 pixels)</p>
+                    <p class="text-sm text-gray-500">Supported formats: JPG, PNG, GIF, BMP (Max. {{ max_upload_mb }}MB, {{ max_image_dim }}x{{ max_image_dim }} pixels)</p>
                     <p class="text-xs text-emerald-600 mt-2 font-medium">
                         <i class="fas fa-info-circle mr-1"></i>
                         Optimized for 128x128 pixel images of potato crops with weeds
@@ -255,8 +287,9 @@
                             <i class="fas fa-magic text-emerald-500 mr-2"></i>
                             AI Segmentation
                         </h3>
-                        <div class="rounded-xl overflow-hidden shadow-md">
-                            <img id="segmentedImage" src="" alt="Segmented Image" class="w-full h-auto max-h-96 object-contain">
+                        <div class="rounded-xl overflow-hidden shadow-md reveal-stack" id="revealStack">
+                            <img id="baseImage" src="" alt="Original Crop Image">
+                            <img id="segmentedImage" src="" alt="Segmented Image" class="reveal-overlay">
                         </div>
                     </div>
                 </div>
@@ -290,6 +323,10 @@
         let currentFile = null;
         let processingStartTime = null;
 
+        // Limits come from the server so client and backend cannot drift apart
+        const MAX_UPLOAD_BYTES = {{ max_upload_mb }} * 1024 * 1024;
+        const MAX_IMAGE_DIM = {{ max_image_dim }};
+
         // Color definition for each class
         const classColors = {
             'background': '#000000',  // Black
@@ -317,6 +354,8 @@
         const resultContainer = document.getElementById('resultContainer');
         const originalImage = document.getElementById('originalImage');
         const segmentedImage = document.getElementById('segmentedImage');
+        const baseImage = document.getElementById('baseImage');
+        const revealStack = document.getElementById('revealStack');
         const downloadBtn = document.getElementById('downloadBtn');
         const newImageBtn = document.getElementById('newImageBtn');
         const processingTimeElement = document.getElementById('processingTime');
@@ -362,9 +401,9 @@
                 return;
             }
 
-            // Validate file size (2MB)
-            if (file.size > 2 * 1024 * 1024) {
-                showError('File size must be less than 2MB');
+            // Validate file size against the server limit
+            if (file.size > MAX_UPLOAD_BYTES) {
+                showError(`File size must be less than {{ max_upload_mb }}MB`);
                 return;
             }
 
@@ -379,9 +418,9 @@
             img.onload = function() {
                 URL.revokeObjectURL(url);
                 
-                // Check if image dimensions exceed 256x256
-                if (this.width > 256 || this.height > 256) {
-                    showError(`Image dimensions (${this.width}x${this.height}) exceed the maximum allowed size of 256x256 pixels. Please resize your image and try again.`);
+                // Check the image against the server's dimension limit
+                if (this.width > MAX_IMAGE_DIM || this.height > MAX_IMAGE_DIM) {
+                    showError(`Image dimensions (${this.width}x${this.height}) exceed the maximum allowed size of ${MAX_IMAGE_DIM}x${MAX_IMAGE_DIM} pixels. Please resize your image and try again.`);
                     return;
                 }
                 
@@ -449,43 +488,32 @@
                 potatoCount.innerHTML = `${data.class_stats.potato_area || 'N/A'}`;
             }
 
-            // ======= NEW FUNCTIONALITY: Play segmentation animation =======
-            if (data.animation_frames && data.animation_frames.length > 0) {
-                playSegmentationAnimation(data.animation_frames, data.segmented_image);
-            } else {
-                // If there are no animation frames, show the result directly
-                segmentedImage.src = data.segmented_image;
-            }
+            // Reveal the segmentation over the original image
+            playSegmentationAnimation(data.original_image, data.segmented_image);
 
             // Show results with animation
             resultContainer.classList.remove('hidden');
             resultContainer.scrollIntoView({ behavior: 'smooth' });
         }
 
-        function playSegmentationAnimation(frames, finalImage) {
-            let frameIndex = 0;
-            const frameDelay = 100; // 100ms between frames for a smooth animation
+        function playSegmentationAnimation(baseSrc, overlaySrc) {
+            baseImage.src = baseSrc;
+            segmentedImage.src = overlaySrc;
 
-            // Function to show the next frame
-            function showNextFrame() {
-                if (frameIndex < frames.length) {
-                    segmentedImage.src = frames[frameIndex];
-                    frameIndex++;
-                    setTimeout(showNextFrame, frameDelay);
-                } else {
-                    // Animation finished, show final image
-                    segmentedImage.src = finalImage;
+            // Restart from a closed circle on every run
+            segmentedImage.classList.remove('revealing', 'revealed');
 
-                    // Add a "flash" effect upon completion
-                    segmentedImage.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.8)';
-                    setTimeout(() => {
-                        segmentedImage.style.boxShadow = '';
-                    }, 1000);
-                }
-            }
+            segmentedImage.onload = () => {
+                // Two frames so the browser paints the closed state before easing open
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    segmentedImage.classList.add('revealing', 'revealed');
+                }));
+            };
 
-            // Start the animation
-            showNextFrame();
+            segmentedImage.addEventListener('transitionend', () => {
+                revealStack.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.8)';
+                setTimeout(() => { revealStack.style.boxShadow = ''; }, 1000);
+            }, { once: true });
         }
 
         function updateClassStats(stats) {
@@ -523,6 +551,7 @@
 
         function hideResults() {
             resultContainer.classList.add('hidden');
+            segmentedImage.classList.remove('revealing', 'revealed');
         }
 
         // Download functionality

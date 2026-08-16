@@ -1,18 +1,23 @@
 """
 Weed Segmentation Predictor
-Standalone script for predicting weed segmentation in potato crops.
-Separated from the Flask application logic for better modularity.
+Professional standalone script for predicting weed segmentation in potato crops.
+Enhanced with comprehensive logging and error handling.
 """
 
 import os
 import cv2
 import numpy as np
-from PIL import Image
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
 import timm
+import traceback
+import logging
+from PIL import Image
+from torchvision import transforms
+
+# Setup logger for this module
+logger = logging.getLogger('weed_predictor')
 
 # Class definitions and colors for weed segmentation in potato crops
 CLASS_NAMES = {
@@ -221,7 +226,7 @@ class WeedSegmentationPredictor:
     """
     Main class for weed segmentation prediction
     """
-    def __init__(self, model_path='models/weed_segmentation_087_model.pth'):
+    def __init__(self, model_path='models/weed_segmentation_S-TTA.pth'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_path = model_path
         self.model = None
@@ -234,12 +239,34 @@ class WeedSegmentationPredictor:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
 
+        # TTA-specific transforms (without normalization, applied on tensors)
+        self.tta_transforms = [
+            lambda x: x,  # Original
+            lambda x: torch.flip(x, dims=[3]),  # Horizontal flip
+            lambda x: torch.flip(x, dims=[2]),  # Vertical flip
+            lambda x: torch.flip(torch.flip(x, dims=[3]), dims=[2]),  # Both flips
+            lambda x: torch.rot90(x, k=1, dims=[2, 3]),  # 90° rotation
+            lambda x: torch.rot90(x, k=2, dims=[2, 3]),  # 180° rotation
+            lambda x: torch.rot90(x, k=3, dims=[2, 3]),  # 270° rotation
+        ]
+
+        # Corresponding inverse transforms for TTA
+        self.tta_inverse_transforms = [
+            lambda x: x,  # Original
+            lambda x: torch.flip(x, dims=[3]),  # Horizontal flip
+            lambda x: torch.flip(x, dims=[2]),  # Vertical flip
+            lambda x: torch.flip(torch.flip(x, dims=[3]), dims=[2]),  # Both flips
+            lambda x: torch.rot90(x, k=3, dims=[2, 3]),  # Inverse 90° rotation
+            lambda x: torch.rot90(x, k=2, dims=[2, 3]),  # Inverse 180° rotation
+            lambda x: torch.rot90(x, k=1, dims=[2, 3]),  # Inverse 270° rotation
+        ]
+
         self.load_model()
 
     def load_model(self):
-        """Load the trained segmentation model with the improved script"""
+        """Load the trained segmentation model with TTA capabilities"""
         try:
-            print(f"🔄 Loading improved WeedSegmenterFPN model from: {self.model_path}")
+            print(f"🔄 Loading TTA-enhanced WeedSegmenterFPN model from: {self.model_path}")
 
             if not os.path.exists(self.model_path):
                 print(f"❌ Error: Model file not found at {self.model_path}")
@@ -255,10 +282,10 @@ class WeedSegmentationPredictor:
             self.model = WeedSegmenterFPN(num_classes=6)
 
             # Load the model weights
-            print("🔄 Loading model checkpoint...")
+            print("🔄 Loading TTA-trained model checkpoint...")
             checkpoint = torch.load(self.model_path, map_location=self.device)
 
-            # The model from the improved script saves only the state_dict directly
+            # Handle different checkpoint formats
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 # If it's a full checkpoint
                 self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -267,6 +294,8 @@ class WeedSegmentationPredictor:
                     print(f"📊 Epoch: {checkpoint['epoch']}")
                 if 'best_val_miou' in checkpoint:
                     print(f"📊 Best mIoU: {checkpoint['best_val_miou']:.4f}")
+                if 'tta_miou' in checkpoint:
+                    print(f"📊 TTA mIoU: {checkpoint['tta_miou']:.4f}")
             else:
                 # If it's just the state_dict (as saved by the improved script)
                 self.model.load_state_dict(checkpoint)
@@ -276,14 +305,16 @@ class WeedSegmentationPredictor:
             self.model.eval()
             self.model.training = False  # Important: evaluation mode
 
-            print(f"✅ Improved WeedSegmenterFPN model loaded successfully on {self.device}")
+            print(f"✅ TTA-enhanced WeedSegmenterFPN model loaded successfully on {self.device}")
             print(f"📏 Input size: {self.input_size}")
+            print(f"🔄 TTA enabled with {len(self.tta_transforms)} augmentation variants")
             print("📊 Detected classes:", list(CLASS_NAMES_EN.values()))
             print("🎯 Model optimized with:")
             print("  - FPN architecture with attention modules")
             print("  - ASPP (Atrous Spatial Pyramid Pooling)")
             print("  - Deep supervision with auxiliary heads")
             print("  - EfficientNetV2-S as backbone")
+            print("  - Test-Time Augmentation (TTA)")
 
         except Exception as e:
             print(f"❌ Error loading model: {str(e)}")
@@ -300,9 +331,35 @@ class WeedSegmentationPredictor:
         input_tensor = self.transform(image).unsqueeze(0)
         return input_tensor.to(self.device), original_size
 
+    def predict_with_tta(self, input_tensor):
+        """
+        Perform Test-Time Augmentation (TTA) prediction
+        Similar to the evaluate_with_tta function from the training script
+        """
+        # Perform TTA
+        all_predictions = []
+        
+        with torch.no_grad():
+            for transform, inverse_transform in zip(self.tta_transforms, self.tta_inverse_transforms):
+                # Apply augmentation
+                augmented_input = transform(input_tensor)
+                
+                # Get model prediction
+                outputs = self.model(augmented_input)
+                probabilities = F.softmax(outputs, dim=1)
+                
+                # Apply inverse transformation to align predictions
+                aligned_predictions = inverse_transform(probabilities)
+                all_predictions.append(aligned_predictions)
+        
+        # Average all predictions (ensemble)
+        averaged_predictions = torch.stack(all_predictions).mean(dim=0)
+        
+        return averaged_predictions
+
     def predict(self, image_path):
         """
-        Predict segmentation using the trained model
+        Predict segmentation using the trained model with TTA
         Returns segmentation mask as a numpy array with values 0-5
         """
         if self.model is None:
@@ -310,33 +367,61 @@ class WeedSegmentationPredictor:
             return self._create_dummy_mask(image_path)
 
         try:
-            print(f"🔍 Starting prediction for: {os.path.basename(image_path)}")
+            print(f"🔍 Starting TTA prediction for: {os.path.basename(image_path)}")
+            print(f"🔄 Using Test-Time Augmentation with {len(self.tta_transforms)} variants")
 
             input_tensor, original_size = self.preprocess_image(image_path)
 
-            with torch.no_grad():
-                outputs = self.model(input_tensor)
-                probabilities = F.softmax(outputs, dim=1)
-                predicted_mask = torch.argmax(probabilities, dim=1)
-                mask = predicted_mask.cpu().numpy()[0]
+            # use TTA for best accuracy
+            probabilities = self.predict_with_tta(input_tensor)
 
-                # Resize to original size
-                original_image = cv2.imread(image_path)
-                original_height, original_width = original_image.shape[:2]
-                mask_resized = cv2.resize(mask.astype(np.uint8),
-                                        (original_width, original_height),
-                                        interpolation=cv2.INTER_NEAREST)
+            # Get final prediction
+            predicted_mask = torch.argmax(probabilities, dim=1)
+            mask = predicted_mask.cpu().numpy()[0]
 
-                unique_classes = np.unique(mask_resized)
-                detected_classes = [CLASS_NAMES[cls] for cls in unique_classes if cls in CLASS_NAMES]
-                print(f"✅ Prediction completed. Detected classes: {detected_classes}")
+            # Resize to original size
+            original_image = cv2.imread(image_path)
+            original_height, original_width = original_image.shape[:2]
+            mask_resized = cv2.resize(mask.astype(np.uint8),
+                                    (original_width, original_height),
+                                    interpolation=cv2.INTER_NEAREST)
 
-                return mask_resized
+            unique_classes = np.unique(mask_resized)
+            detected_classes = [CLASS_NAMES[cls] for cls in unique_classes if cls in CLASS_NAMES]
+            
+            print(f"✅ TTA prediction completed. Detected classes: {detected_classes}")
+
+            return mask_resized
 
         except Exception as e:
             print(f"❌ Error during prediction: {str(e)}")
             print("🔄 Using simulated data as fallback")
             return self._create_dummy_mask(image_path)
+
+    def get_prediction_confidence(self, probabilities):
+        """
+        Calculate prediction confidence metrics
+        
+        Args:
+            probabilities: Softmax probabilities from model output
+            
+        Returns:
+            dict: Confidence metrics
+        """
+        max_probs, _ = torch.max(probabilities, dim=1)
+        mean_confidence = torch.mean(max_probs).item()
+        min_confidence = torch.min(max_probs).item()
+        
+        # Calculate entropy (uncertainty measure)
+        entropy = -torch.sum(probabilities * torch.log(probabilities + 1e-8), dim=1)
+        mean_uncertainty = torch.mean(entropy).item()
+        
+        return {
+            'mean_confidence': mean_confidence,
+            'min_confidence': min_confidence,
+            'mean_uncertainty': mean_uncertainty,
+            'prediction_quality': 'high' if mean_confidence > 0.8 else 'medium' if mean_confidence > 0.6 else 'low'
+        }
 
     def _create_dummy_mask(self, image_path):
         """Create a simulated mask when the model is not available"""
@@ -400,8 +485,11 @@ class WeedSegmentationPredictor:
         return result
 
 def main():
-    """Example function for standalone use of the predictor"""
-    # Example of using the predictor
+    """Example function for standalone use of the predictor with TTA"""
+    # Example of using the predictor with TTA
+    print("🌱 WeedSegmentationPredictor with TTA")
+    print("=" * 50)
+    
     predictor = WeedSegmentationPredictor()
 
     # Test image path (change to a real image)
@@ -410,7 +498,7 @@ def main():
     if os.path.exists(test_image):
         print(f"🔍 Processing image: {test_image}")
 
-        # Perform prediction
+        # Perform prediction with TTA
         mask = predictor.predict(test_image)
 
         # Calculate statistics
@@ -425,10 +513,14 @@ def main():
         overlay = predictor.create_overlay_visualization(test_image, mask)
 
         # Save result
-        cv2.imwrite("prediction_result.jpg", overlay)
-        print("✅ Result saved as 'prediction_result.jpg'")
+        cv2.imwrite("prediction_result_tta.jpg", overlay)
+        print("✅ Result saved as 'prediction_result_tta.jpg'")
+        
+        print(f"\n💡 TTA provides robust predictions using {len(predictor.tta_transforms)} augmentation variants")
+        
     else:
         print(f"❌ Test image not found: {test_image}")
+        print("📝 Please ensure you have a test image in the current directory")
 
 if __name__ == "__main__":
     main()

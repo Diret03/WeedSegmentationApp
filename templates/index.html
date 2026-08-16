@@ -156,13 +156,25 @@
                     <i class="fas fa-cloud-upload-alt text-6xl text-blue-500 mb-6"></i>
                     <h3 class="text-2xl font-semibold text-gray-800 mb-2">Drag and drop your crop image here</h3>
                     <p class="text-gray-600 mb-2">or click to browse files</p>
-                    <p class="text-sm text-gray-500">Supported formats: JPG, PNG, GIF, BMP (Max. 16MB)</p>
+                    <p class="text-sm text-gray-500">Supported formats: JPG, PNG, GIF, BMP (Max. 2MB, 256x256 pixels)</p>
                     <p class="text-xs text-emerald-600 mt-2 font-medium">
                         <i class="fas fa-info-circle mr-1"></i>
-                        Optimized for images of potato crops with weeds
+                        Optimized for 128x128 pixel images of potato crops with weeds
                     </p>
                 </div>
                 <input type="file" id="fileInput" accept="image/*" class="hidden">
+                
+                <!-- Dataset Link -->
+                <div class="mt-6 text-center">
+                    <p class="text-base text-blue-600 font-medium">
+                        <a href="https://github.com/JorgePazos-git/Dataset-of-weeds-in-potato-crops-in-the-province-of-Carchi-and-Imbabura-in-/tree/main/Balanced/test/images"
+                           target="_blank"
+                           rel="noopener noreferrer" >
+                            <i class="fas fa-external-link-alt mr-1"></i>
+                             Test images (128x128 pixels) from our dataset
+                        </a>
+                    </p>
+                </div>
 
                 <!-- Loading Indicator -->
                 <div class="loading-spinner hidden mt-8" id="loadingSpinner">
@@ -350,13 +362,39 @@
                 return;
             }
 
-            // Validate file size (16MB)
-            if (file.size > 16 * 1024 * 1024) {
-                showError('File size must be less than 16MB');
+            // Validate file size (2MB)
+            if (file.size > 2 * 1024 * 1024) {
+                showError('File size must be less than 2MB');
                 return;
             }
 
-            uploadFile(file);
+            // Validate image dimensions
+            validateImageDimensions(file);
+        }
+
+        function validateImageDimensions(file) {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            
+            img.onload = function() {
+                URL.revokeObjectURL(url);
+                
+                // Check if image dimensions exceed 256x256
+                if (this.width > 256 || this.height > 256) {
+                    showError(`Image dimensions (${this.width}x${this.height}) exceed the maximum allowed size of 256x256 pixels. Please resize your image and try again.`);
+                    return;
+                }
+                
+                // Dimensions are valid, proceed with upload
+                uploadFile(file);
+            };
+            
+            img.onerror = function() {
+                URL.revokeObjectURL(url);
+                showError('Unable to read image file. Please select a valid image.');
+            };
+            
+            img.src = url;
         }
 
         function uploadFile(file) {
@@ -380,7 +418,9 @@
                 if (data.success) {
                     showResults(data);
                 } else {
-                    showError(data.error || 'Processing error');
+                    // Handle both old and new error formats
+                    const errorMessage = data.error?.message || data.error || 'Processing error';
+                    showError(errorMessage);
                 }
             })
             .catch(error => {
@@ -389,7 +429,10 @@
             });
         }
 
-        function showResults(data) {
+        function showResults(response) {
+            // Handle both old and new response formats for backward compatibility
+            const data = response.data || response; // New format has nested .data
+            
             currentFile = data.filename;
 
             // Show original image
@@ -453,9 +496,9 @@
                 const div = document.createElement('div');
                 div.className = 'flex flex-col items-center p-3 rounded-lg bg-gray-50';
                 div.innerHTML = `
-                    <div class="w-6 h-6 rounded-full mb-2" style="background-color: ${classColors[className]}"></div>
-                    <span class="text-xs font-medium text-gray-700">${classNames[className]}</span>
-                    <span class="text-xs text-gray-500">${percentage.toFixed(1)}%</span>
+                    <div class="w-8 h-8 rounded-full mb-2" style="background-color: ${classColors[className]}"></div>
+                    <span class="text-base font-medium text-gray-700">${classNames[className]}</span>
+                    <span class="text-base text-gray-500">${percentage.toFixed(1)}%</span>
                 `;
                 classStats.appendChild(div);
             });

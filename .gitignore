@@ -3,3 +3,5 @@
 /results/*
 /uploads/*
 /__pycache__
+/logs/
+*.log

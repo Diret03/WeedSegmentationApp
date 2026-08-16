@@ -1,101 +1,53 @@
+# Ultra-minimal Docker image for production
 FROM python:3.11-slim
-LABEL authors="Diret"
-LABEL description="Weed Segmentation Flask PyTorch Application"
 
-# Set working directory
+LABEL authors="Diret"
+LABEL description="Weed Segmentation Flask PyTorch Application - Ultra Minimal"
+
+# Install absolute minimum runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libgomp1 \
+    curl \
+    --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash app
+
 WORKDIR /app
 
-# Install system dependencies required for OpenCV and PyTorch
-RUN apt-get update && \
-    apt-get install -y \
-        nodejs \
-        npm \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender-dev \
-        libgomp1 \
-        libgtk-3-0 \
-        libavcodec-dev \
-        libavformat-dev \
-        libswscale-dev \
-        libv4l-dev \
-        libxvidcore-dev \
-        libx264-dev \
-        libjpeg-dev \
-        libpng-dev \
-        libtiff-dev \
-        libatlas-base-dev \
-        gfortran \
-        wget \
-        curl \
-        libgl1-mesa-glx \
-        libglib2.0-0 \
-        libfontconfig1 \
-        libxrender1 \
-        libxtst6 \
-        libxi6 \
-        libxrandr2 \
-        libasound2 \
-        --no-install-recommends && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy Python requirements first for better caching
+# Copy requirements and optimize for minimal install
 COPY requirements.txt .
-
-# Create a custom requirements file with opencv-python-headless instead of opencv-python
 RUN sed 's/opencv-python==/opencv-python-headless==/g' requirements.txt > requirements_headless.txt
 
-# Install Python dependencies with optimizations for PyTorch
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir -r requirements_headless.txt
+# Install minimal Python packages
+RUN pip install --upgrade pip --no-cache-dir && \
+    pip install --no-cache-dir \
+    torch==2.0.1+cpu \
+    torchvision==0.15.2+cpu \
+    --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements_headless.txt && \
+    pip cache purge
 
-# Copy Node.js dependencies
-COPY package.json package-lock.json* ./
+# Create directories with proper ownership
+RUN mkdir -p uploads results models static templates && \
+    chown -R app:app /app
 
-# Install Node.js dependencies (TailwindCSS)
-RUN npm install
+# Copy files with proper ownership
+COPY --chown=app:app app.py weed_predictor.py logger_config.py ./
+COPY --chown=app:app appTest.png ./
+COPY --chown=app:app models/ ./models/
+COPY --chown=app:app static/ ./static/
+COPY --chown=app:app templates/ ./templates/
 
-# Create necessary directories
-RUN mkdir -p uploads results models static templates
-
-# Copy ALL application files (including models) BEFORE switching to non-root user
-COPY app.py weed_predictor.py ./
-COPY appTest.png ./
-
-# Copy models directory with explicit verification
-COPY models/ ./models/
-RUN ls -la ./models/ && echo "Models copied successfully"
-
-# Copy static and templates directories
-COPY static/ ./static/
-COPY templates/ ./templates/
-
-# Set environment variables for better PyTorch performance and OpenCV
-ENV PYTHONUNBUFFERED=1
-ENV TORCH_HOME=/app/.torch
-ENV OMP_NUM_THREADS=1
-ENV QT_QPA_PLATFORM=offscreen
-ENV DISPLAY=:99
-
-# Create non-root user and set permissions AFTER copying all files
-RUN useradd --create-home --shell /bin/bash app && \
-    chown -R app:app /app && \
-    chmod -R 755 /app/models
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=1
 
 USER app
-
-# Verify models are accessible
-RUN ls -la models/ || echo "Models directory not found"
-
-# Expose the Flask port
 EXPOSE 5000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/ || exit 1
-
-# Use gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "app:app"]

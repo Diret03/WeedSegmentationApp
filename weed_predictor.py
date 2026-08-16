@@ -170,13 +170,14 @@ class DecoderBlock(nn.Module):
         return self.conv_fuse(x_concat)
 
 class WeedSegmenterFPN(nn.Module):
-    def __init__(self, num_classes=6):
+    def __init__(self, num_classes=6, pretrained_backbone=False):
         super(WeedSegmenterFPN, self).__init__()
-        self.training = False # Default to eval mode for inference
 
+        # The checkpoint carries every backbone weight, so downloading the
+        # ImageNet-21k weights here would only be overwritten on load.
         self.backbone = timm.create_model(
             'tf_efficientnetv2_s.in21k',
-            pretrained=True,
+            pretrained=pretrained_backbone,
             features_only=True,
             out_indices=(0, 1, 2, 3)
         )
@@ -222,13 +223,25 @@ class WeedSegmenterFPN(nn.Module):
 
         return final_logits
 
+class ModelLoadError(RuntimeError):
+    """Raised when the segmentation checkpoint cannot be loaded."""
+
+
 class WeedSegmentationPredictor:
     """
     Main class for weed segmentation prediction
+
+    Args:
+        model_path: path to the trained checkpoint.
+        demo_mode: when True, a missing or broken checkpoint falls back to a
+            hand-drawn placeholder mask instead of raising. Off by default so
+            that a broken deployment fails loudly rather than serving
+            fabricated segmentations as if they were predictions.
     """
-    def __init__(self, model_path='models/weed_segmentation_S-TTA.pth'):
+    def __init__(self, model_path='models/weed_segmentation_S-TTA.pth', demo_mode=False):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_path = model_path
+        self.demo_mode = demo_mode
         self.model = None
         self.input_size = (256, 256)
 
@@ -264,65 +277,67 @@ class WeedSegmentationPredictor:
         self.load_model()
 
     def load_model(self):
-        """Load the trained segmentation model with TTA capabilities"""
+        """
+        Load the trained segmentation model with TTA capabilities.
+
+        Raises ModelLoadError if the checkpoint is missing or unusable, unless
+        demo_mode is enabled.
+        """
         try:
-            print(f"🔄 Loading TTA-enhanced WeedSegmenterFPN model from: {self.model_path}")
+            logger.info("Loading WeedSegmenterFPN checkpoint", extra={'model_path': self.model_path})
 
             if not os.path.exists(self.model_path):
-                print(f"❌ Error: Model file not found at {self.model_path}")
-                print("📝 Available models in the 'models' folder:")
+                available = []
                 models_dir = os.path.dirname(self.model_path)
-                if os.path.exists(models_dir):
-                    for file in os.listdir(models_dir):
-                        if file.endswith('.pth'):
-                            print(f"  - {file}")
-                return
+                if os.path.isdir(models_dir):
+                    available = [f for f in os.listdir(models_dir) if f.endswith('.pth')]
+                raise FileNotFoundError(
+                    f"Model file not found at {self.model_path}. "
+                    f"Available checkpoints: {available or 'none'}"
+                )
 
-            # Create an instance of the model with the improved architecture
             self.model = WeedSegmenterFPN(num_classes=6)
 
-            # Load the model weights
-            print("🔄 Loading TTA-trained model checkpoint...")
             checkpoint = torch.load(self.model_path, map_location=self.device)
 
-            # Handle different checkpoint formats
+            # Accept both a full training checkpoint and a bare state_dict
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                # If it's a full checkpoint
                 self.model.load_state_dict(checkpoint['model_state_dict'])
-                print(f"✅ Full checkpoint loaded")
-                if 'epoch' in checkpoint:
-                    print(f"📊 Epoch: {checkpoint['epoch']}")
-                if 'best_val_miou' in checkpoint:
-                    print(f"📊 Best mIoU: {checkpoint['best_val_miou']:.4f}")
-                if 'tta_miou' in checkpoint:
-                    print(f"📊 TTA mIoU: {checkpoint['tta_miou']:.4f}")
+                logger.info(
+                    "Full checkpoint loaded",
+                    extra={
+                        'epoch': checkpoint.get('epoch'),
+                        'best_val_miou': checkpoint.get('best_val_miou'),
+                        'tta_miou': checkpoint.get('tta_miou')
+                    }
+                )
             else:
-                # If it's just the state_dict (as saved by the improved script)
                 self.model.load_state_dict(checkpoint)
-                print(f"✅ State dict loaded directly")
+                logger.info("State dict loaded directly")
 
             self.model.to(self.device)
             self.model.eval()
-            self.model.training = False  # Important: evaluation mode
 
-            print(f"✅ TTA-enhanced WeedSegmenterFPN model loaded successfully on {self.device}")
-            print(f"📏 Input size: {self.input_size}")
-            print(f"🔄 TTA enabled with {len(self.tta_transforms)} augmentation variants")
-            print("📊 Detected classes:", list(CLASS_NAMES_EN.values()))
-            print("🎯 Model optimized with:")
-            print("  - FPN architecture with attention modules")
-            print("  - ASPP (Atrous Spatial Pyramid Pooling)")
-            print("  - Deep supervision with auxiliary heads")
-            print("  - EfficientNetV2-S as backbone")
-            print("  - Test-Time Augmentation (TTA)")
+            logger.info(
+                "Model ready",
+                extra={
+                    'device': str(self.device),
+                    'input_size': self.input_size,
+                    'tta_variants': len(self.tta_transforms),
+                    'classes': list(CLASS_NAMES_EN.values())
+                }
+            )
 
         except Exception as e:
-            print(f"❌ Error loading model: {str(e)}")
-            print("📋 Error details:")
-            import traceback
-            print(traceback.format_exc())
-            print("🔄 Using demo mode with simulated data")
             self.model = None
+            if self.demo_mode:
+                logger.warning(
+                    "Model unavailable - DEMO MODE is on, placeholder masks will be served",
+                    exc_info=True
+                )
+                return
+            logger.error("Failed to load segmentation model", exc_info=True)
+            raise ModelLoadError(f"Failed to load model from {self.model_path}: {e}") from e
 
     def preprocess_image(self, image_path):
         """Preprocess image for the model"""
@@ -333,29 +348,26 @@ class WeedSegmentationPredictor:
 
     def predict_with_tta(self, input_tensor):
         """
-        Perform Test-Time Augmentation (TTA) prediction
-        Similar to the evaluate_with_tta function from the training script
+        Perform Test-Time Augmentation (TTA) prediction.
+
+        All augmentation variants are stacked into a single batch so the
+        backbone runs once instead of once per variant.
         """
-        # Perform TTA
-        all_predictions = []
-        
-        with torch.no_grad():
-            for transform, inverse_transform in zip(self.tta_transforms, self.tta_inverse_transforms):
-                # Apply augmentation
-                augmented_input = transform(input_tensor)
-                
-                # Get model prediction
-                outputs = self.model(augmented_input)
-                probabilities = F.softmax(outputs, dim=1)
-                
-                # Apply inverse transformation to align predictions
-                aligned_predictions = inverse_transform(probabilities)
-                all_predictions.append(aligned_predictions)
-        
+        with torch.inference_mode():
+            # One row per augmentation variant
+            batch = torch.cat([transform(input_tensor) for transform in self.tta_transforms], dim=0)
+
+            outputs = self.model(batch)
+            probabilities = F.softmax(outputs, dim=1)
+
+            # Undo each augmentation so every prediction lines up with the input
+            aligned_predictions = [
+                inverse_transform(probabilities[idx:idx + 1])
+                for idx, inverse_transform in enumerate(self.tta_inverse_transforms)
+            ]
+
         # Average all predictions (ensemble)
-        averaged_predictions = torch.stack(all_predictions).mean(dim=0)
-        
-        return averaged_predictions
+        return torch.stack(aligned_predictions).mean(dim=0)
 
     def predict(self, image_path):
         """
@@ -363,40 +375,38 @@ class WeedSegmentationPredictor:
         Returns segmentation mask as a numpy array with values 0-5
         """
         if self.model is None:
-            print("⚠️ Model not available, using simulated data")
-            return self._create_dummy_mask(image_path)
+            if self.demo_mode:
+                logger.warning("Model not available - serving placeholder mask (DEMO MODE)")
+                return self._create_dummy_mask(image_path)
+            raise ModelLoadError("Segmentation model is not loaded")
 
-        try:
-            print(f"🔍 Starting TTA prediction for: {os.path.basename(image_path)}")
-            print(f"🔄 Using Test-Time Augmentation with {len(self.tta_transforms)} variants")
+        logger.info(
+            "Starting TTA prediction",
+            extra={'image': os.path.basename(image_path), 'tta_variants': len(self.tta_transforms)}
+        )
 
-            input_tensor, original_size = self.preprocess_image(image_path)
+        input_tensor, original_size = self.preprocess_image(image_path)
 
-            # use TTA for best accuracy
-            probabilities = self.predict_with_tta(input_tensor)
+        probabilities = self.predict_with_tta(input_tensor)
 
-            # Get final prediction
-            predicted_mask = torch.argmax(probabilities, dim=1)
-            mask = predicted_mask.cpu().numpy()[0]
+        predicted_mask = torch.argmax(probabilities, dim=1)
+        mask = predicted_mask.cpu().numpy()[0]
 
-            # Resize to original size
-            original_image = cv2.imread(image_path)
-            original_height, original_width = original_image.shape[:2]
-            mask_resized = cv2.resize(mask.astype(np.uint8),
-                                    (original_width, original_height),
-                                    interpolation=cv2.INTER_NEAREST)
+        # Resize back to the dimensions of the uploaded image
+        original_image = cv2.imread(image_path)
+        if original_image is None:
+            raise ValueError(f"Unable to read image for resizing: {image_path}")
+        original_height, original_width = original_image.shape[:2]
+        mask_resized = cv2.resize(mask.astype(np.uint8),
+                                (original_width, original_height),
+                                interpolation=cv2.INTER_NEAREST)
 
-            unique_classes = np.unique(mask_resized)
-            detected_classes = [CLASS_NAMES[cls] for cls in unique_classes if cls in CLASS_NAMES]
-            
-            print(f"✅ TTA prediction completed. Detected classes: {detected_classes}")
+        unique_classes = np.unique(mask_resized)
+        detected_classes = [CLASS_NAMES[cls] for cls in unique_classes if cls in CLASS_NAMES]
 
-            return mask_resized
+        logger.info("TTA prediction completed", extra={'detected_classes': detected_classes})
 
-        except Exception as e:
-            print(f"❌ Error during prediction: {str(e)}")
-            print("🔄 Using simulated data as fallback")
-            return self._create_dummy_mask(image_path)
+        return mask_resized
 
     def get_prediction_confidence(self, probabilities):
         """
@@ -424,7 +434,12 @@ class WeedSegmentationPredictor:
         }
 
     def _create_dummy_mask(self, image_path):
-        """Create a simulated mask when the model is not available"""
+        """
+        Create a simulated mask for demo mode only.
+
+        These shapes are hand-drawn, not predictions. Never reachable unless
+        demo_mode was explicitly enabled.
+        """
         image = cv2.imread(image_path)
         height, width = image.shape[:2]
         mask = np.zeros((height, width), dtype=np.uint8)
@@ -440,7 +455,7 @@ class WeedSegmentationPredictor:
         cv2.ellipse(mask, (width//5, 3*height//4), (40, 50), 30, 0, 360, 5, -1)
         cv2.ellipse(mask, (4*width//5, height//6), (35, 45), -20, 0, 360, 5, -1)
 
-        print("⚠️ Using simulated mask for demonstration")
+        logger.warning("Using simulated mask for demonstration - NOT a real prediction")
         return mask
 
     def calculate_class_statistics(self, mask):
@@ -473,6 +488,8 @@ class WeedSegmentationPredictor:
         Create an overlay visualization of the segmentation results
         """
         image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError(f"Unable to load image for overlay creation: {image_path}")
         overlay = np.zeros_like(image)
 
         # Apply colors to all classes

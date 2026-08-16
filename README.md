@@ -1,244 +1,196 @@
-# 🌱 Sistema de Segmentación Automática de Malezas en Cultivos de Papa
+# 🌱 Automatic Weed Segmentation in Potato Crops
 
-## 📋 Descripción
+## 📋 Description
 
-Sistema de inteligencia artificial especializado en la identificación y segmentación automática de malezas en cultivos agrícolas de papa. Utiliza tecnología de aprendizaje profundo con arquitectura Feature Pyramid Network (FPN) para detectar y clasificar diferentes tipos de malezas con alta precisión.
+Deep learning system for identifying and segmenting weeds in potato crops. It uses a custom Feature
+Pyramid Network (FPN) with an EfficientNetV2-S backbone, attention modules, ASPP and Test-Time
+Augmentation, served through a Flask web interface.
 
-![Captura de pantalla de la aplicación](screenshots/app-preview.png)
+## 🎯 Features
 
-## 🎯 Características Principales
+- **Multi-class segmentation**: 6 classes covering the potato crop and 4 weed types
+- **Test-Time Augmentation**: 7 augmentation variants ensembled in a single batched forward pass
+- **Web interface**: Flask app with a Tailwind CSS front end and an animated segmentation reveal
+- **Per-class statistics**: pixel distribution and crop/weed coverage metrics
+- **Result download**: export the processed overlay
+- **Structured logging**: JSON logs with request IDs and per-request timings
 
-- **Detección Automática Multi-Clase**: Identifica 6 clases diferentes incluyendo papa y 4 tipos de malezas
-- **Interfaz Web Intuitiva**: Aplicación Flask con diseño moderno usando Tailwind CSS
-- **Procesamiento en Tiempo Real**: Análisis rápido de imágenes con visualización instantánea
-- **Animación de Resultados**: Visualización progresiva de la segmentación con efectos animados
-- **Estadísticas Detalladas**: Análisis cuantitativo de la distribución de clases
-- **Descarga de Resultados**: Exportación de imágenes procesadas
+## 🔬 Detection Classes
 
-## 🔬 Clases de Detección
+| Class | Description | Overlay color |
+|-------|-------------|---------------|
+| **Background** | Soil and background | Black |
+| **Cow-tongue** | Common broadleaf weed | Blue |
+| **Dandelion** | Perennial weed | Orange |
+| **Kikuyo** | Invasive grass | Yellow |
+| **Other Weeds** | Remaining weed species | Purple |
+| **Potato** | Main crop | Green |
 
-El sistema puede identificar las siguientes clases:
+Colors are defined once in `CLASS_COLORS` (`weed_predictor.py`), in BGR because OpenCV renders the overlay.
 
-| Clase | Descripción | Color de Visualización |
-|-------|-------------|----------------------|
-| 🟫 **Fondo** | Background/Suelo | Negro |
-| 🔴 **Lengua de Vaca** | Maleza común en cultivos | Rojo |
-| 🟡 **Diente de León** | Maleza perenne | Naranja/Amarillo |
-| 🟣 **Kikuyo** | Pasto invasivo | Púrpura |
-| 🩷 **Otras Malezas** | Otras especies de malezas | Rosa/Magenta |
-| 🟢 **Papa** | Cultivo principal | Verde esmeralda |
+## 🚀 Quick start with Docker
 
-## 🚀 Instalación y Configuración
-
-### Prerrequisitos
-
-- Python 3.8 o superior
-- Node.js (para compilación de CSS con Tailwind)
-- GPU compatible con CUDA (recomendado para mejor rendimiento)
-
-### 1. Clonar el repositorio
+Docker is the supported path: the image pins Python 3.11 and the CPU builds of torch.
 
 ```bash
-git clone https://github.com/tu-usuario/WeedSegmentationApp.git
-cd WeedSegmentationApp
+# Build (bakes in only the checkpoint that is actually served)
+docker build -t weed-segmentation:latest .
+
+# Run
+docker run -d --name weed-app -p 5000:5000 weed-segmentation:latest
 ```
 
-### 2. Configurar entorno virtual de Python
+The app is available at `http://localhost:5000`. Check readiness with:
 
 ```bash
-# Crear entorno virtual
-python -m venv venv
-
-# Activar entorno virtual
-# Windows
-venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
+curl http://localhost:5000/health
 ```
 
-### 3. Instalar dependencias de Python
+### With Nginx (docker compose)
 
 ```bash
+docker compose up -d          # app + nginx reverse proxy on http://localhost:8080
+docker compose logs -f
+docker compose down
+```
+
+## 🐍 Local installation
+
+**Requires Python 3.11.** `requirements.txt` pins `torch==2.0.1`, which publishes no wheels for
+Python 3.12 or newer — installing on 3.12+ will fail.
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+
+# CPU-only torch (skip if you want the CUDA build)
+pip install torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
-```
 
-### 4. Configurar Tailwind CSS
-
-```bash
-# Instalar dependencias de Node.js
-npm install
-
-# Compilar CSS (si es necesario)
-npx tailwindcss -i ./static/src/input.css -o ./static/dist/output.css --watch
-```
-
-### 5. Descargar el modelo entrenado
-
-Coloca el modelo pre-entrenado en la carpeta `models/`:
-```
-models/
-└── weed_segmenter_fpn_model_085_local.pth
-```
-
-
-## 🏃‍♂️ Ejecución
-
-
-```bash
 python app.py
 ```
 
-La aplicación estará disponible en: `http://localhost:5000`
+### Tailwind CSS
 
+The compiled stylesheet is committed at `static/dist/output.css`. Rebuild it only if you edit
+`static/src/input.css`:
 
-## 📁 Estructura del Proyecto
+```bash
+npm install
+npx @tailwindcss/cli -i ./static/src/input.css -o ./static/dist/output.css --watch
+```
+
+### Model checkpoint
+
+Place the trained checkpoint in `models/`. The default is:
+
+```
+models/
+└── weed_segmentation_S-TTA.pth
+```
+
+Point `MODEL_PATH` elsewhere to serve a different checkpoint, or pass `--build-arg MODEL_FILE=...`
+to bake another one into the image.
+
+> **Note:** the checkpoints are ~90 MB each and are committed directly to git, without Git LFS.
+
+## ⚙️ Configuration
+
+Every setting is read from the environment. See `.env.example` for the full list with defaults.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL_PATH` | `models/weed_segmentation_S-TTA.pth` | Checkpoint to load |
+| `DEMO_MODE` | `0` | Serve placeholder masks if the model fails to load. **Off in production** |
+| `HOST` / `PORT` | `0.0.0.0` / `5000` | Bind address (dev server only) |
+| `MAX_UPLOAD_MB` | `8` | Upload size limit, enforced server-side and shown in the UI |
+| `MAX_IMAGE_DIM` | `256` | Maximum accepted width/height in pixels |
+| `MIN_IMAGE_DIM` | `32` | Minimum accepted width/height in pixels |
+| `RESULT_TTL_MINUTES` | `60` | Age at which result images are purged. `0` disables cleanup |
+| `UPLOAD_FOLDER` / `RESULTS_FOLDER` | `uploads` / `results` | Working directories |
+| `LOG_FILE` | `logs/app.log` | Rotating JSON log |
+| `LOG_MAX_BYTES` / `LOG_BACKUP_COUNT` | `10485760` / `5` | Log rotation limits |
+| `OMP_NUM_THREADS` | `4` | Torch inference threads |
+| `FLASK_ENV` | `development` | Set to `production` for JSON console logs |
+
+**Image size limits.** Uploads larger than `MAX_IMAGE_DIM` are rejected rather than resized: the
+model was trained on 128×128 crops, so full-field photographs would produce unreliable
+segmentations. Use the [test images from the dataset](https://github.com/JorgePazos-git/Dataset-of-weeds-in-potato-crops-in-the-province-of-Carchi-and-Imbabura-in-/tree/main/Balanced/test/images).
+
+## 🔌 API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Web interface |
+| `/health` | GET | `200` when the model is loaded, `503` otherwise |
+| `/upload` | POST | Multipart `file` field; returns the overlay and per-class statistics |
+| `/download/<filename>` | GET | Download a generated result |
+| `/get_model_info` | GET | Model path, device, TTA variant count and class list |
+
+Responses are wrapped in a standard envelope:
+
+```json
+{
+  "success": true,
+  "data": { "...": "..." },
+  "message": "Weed segmentation completed successfully",
+  "request_id": "a1b2c3d4",
+  "timestamp": "2026-08-15T12:00:00Z"
+}
+```
+
+Errors carry a stable code from `ErrorCodes` (`logger_config.py`):
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FILE_005",
+    "message": "Image dimensions (512x512) exceed maximum allowed size of 256x256 pixels",
+    "details": { "width": 512, "height": 512 },
+    "request_id": "a1b2c3d4",
+    "timestamp": "2026-08-15T12:00:00Z"
+  }
+}
+```
+
+If the checkpoint cannot be loaded, prediction endpoints return **503**. The app never substitutes
+simulated output for a real prediction unless `DEMO_MODE` is explicitly enabled.
+
+## 📁 Project structure
 
 ```
 WeedSegmentationApp/
-├── app.py                      # Aplicación principal Flask
-├── weed_predictor.py          # Lógica de predicción y modelo
-├── requirements.txt           # Dependencias Python
-├── package.json              # Dependencias Node.js
-├── README.md                 # Documentación
-├── models/                   # Modelos entrenados
-│   └── weed_segmenter_fpn_model_085_local.pth
-├── static/                   # Archivos estáticos
-│   ├── style.css
-│   ├── potato.svg
-│   ├── src/
-│   └── dist/
-├── templates/                # Templates HTML
+├── app.py                  # Flask application and HTTP endpoints
+├── weed_predictor.py       # Model architecture and inference
+├── logger_config.py        # Structured logging, error codes, response envelopes
+├── requirements.txt        # Python dependencies
+├── package.json            # Tailwind CSS toolchain
+├── Dockerfile              # Multi-stage production image
+├── docker-compose.yml      # App + Nginx
+├── nginx.conf              # Reverse proxy configuration
+├── .env.example            # Documented configuration defaults
+├── models/                 # Trained checkpoints
+├── static/                 # potato.svg, style.css, dist/output.css
+├── templates/
 │   └── index.html
-├── uploads/                  # Imágenes subidas (temporal)
-├── results/                  # Resultados procesados
-└── __pycache__/             # Archivos Python compilados
+├── uploads/                # Transient uploads, deleted after each request
+└── results/                # Generated overlays, purged by TTL
 ```
 
-## 🧠 Arquitectura del Modelo
+## 🧠 Model architecture
 
-### Feature Pyramid Network (FPN)
+- **Backbone**: EfficientNetV2-S (`tf_efficientnetv2_s.in21k`), features at 4 scales
+- **ASPP**: Atrous Spatial Pyramid Pooling with rates 6, 12, 18
+- **Attention**: channel and spatial attention on every decoder skip connection
+- **Decoder**: 3 progressive blocks (128 → 64 → 48 channels) with transposed-convolution upsampling
+- **Deep supervision**: auxiliary heads at two decoder levels, used during training only
+- **Input**: 256×256, ImageNet normalization
+- **TTA**: identity, 3 flips and 3 rotations, batched into one forward pass and averaged
 
-El sistema utiliza una arquitectura FPN personalizada con las siguientes características:
+The backbone is instantiated with `pretrained=False`: the checkpoint already contains every weight,
+so no download happens at startup.
 
-- **Backbone**: EfficientNet o ResNet como extractor de características
-- **Módulos de Atención**: Channel Attention y Spatial Attention
-- **Decoder Piramidal**: Múltiples escalas de resolución
-- **6 Clases de Salida**: Segmentación semántica multi-clase
+## 👥 Authors
 
-### Componentes Técnicos
-
-1. **Attention Mechanisms**:
-   - Channel Attention Module (CAM)
-   - Spatial Attention Module (SAM)
-
-2. **Multi-Scale Feature Fusion**:
-   - Pyramid levels: P2, P3, P4, P5
-   - Feature upsampling y lateral connections
-
-3. **Decoder**:
-   - Progressive feature refinement
-   - Skip connections para preservar detalles
-
-
-## 🎨 Interfaz de Usuario
-
-### Tecnologías Frontend
-
-- **HTML5**: Estructura semántica
-- **Tailwind CSS**: Framework de utilidades CSS
-- **JavaScript Vanilla**: Interactividad sin dependencias
-- **Font Awesome**: Iconografía
-
-## 📊 Métricas y Estadísticas
-
-El sistema proporciona:
-
-- **Porcentaje por clase**: Distribución de píxeles por categoría
-- **Conteo de malezas**: Número de tipos de malezas detectadas
-- **Área de cultivo**: Porcentaje de plantas de papa
-- **Tiempo de procesamiento**: Duración del análisis
-
-
-## 🚀 Despliegue
-
-### 🐳 Docker
-
-El proyecto incluye una configuración completa de Docker optimizada para aplicaciones de ML.
-
-#### Archivos Docker incluidos:
-- `Dockerfile` - Imagen optimizada para PyTorch y OpenCV
-- `docker-compose.yml` - Configuración multi-servicio con Nginx
-- `.dockerignore` - Archivos excluidos del contexto
-- `nginx.conf` - Configuración de proxy reverso
-- `docker-deploy.sh` / `docker-deploy.bat` - Scripts de automatización
-
-#### 🏗️ Construcción Manual
-
-```bash
-# Construir la imagen
-docker build -t weed-segmentation:latest .
-
-# Ejecutar el contenedor
-docker run -d \
-  --name weed-app \
-  -p 5000:5000 \
-  -v $(pwd)/models:/app/models:ro \
-  -v $(pwd)/uploads:/app/uploads \
-  -v $(pwd)/results:/app/results \
-  weed-segmentation:latest
-```
-
-#### 🚀 Scripts de Automatización
-
-**Linux/Mac:**
-```bash
-# Dar permisos de ejecución
-chmod +x docker-deploy.sh
-
-# Construir imagen
-./docker-deploy.sh build
-
-# Ejecutar aplicación
-./docker-deploy.sh run
-
-# Ver logs
-./docker-deploy.sh logs
-
-# Detener aplicación
-./docker-deploy.sh stop
-```
-
-**Windows:**
-```cmd
-# Construir imagen
-docker-deploy.bat build
-
-# Ejecutar aplicación
-docker-deploy.bat run
-
-# Ver logs
-docker-deploy.bat logs
-
-# Detener aplicación
-docker-deploy.bat stop
-```
-
-#### 🐙 Docker Compose
-
-Para un despliegue completo con Nginx:
-
-```bash
-# Iniciar todos los servicios
-docker-compose up -d
-
-# Ver logs de todos los servicios
-docker-compose logs -f
-
-# Detener todos los servicios
-docker-compose down
-```
-
-## 👥 Autores
-
-- Desarrollo principal - [@Diret03](https://github.com/Diret03)
-
+- Main development — [@Diret03](https://github.com/Diret03)

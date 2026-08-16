@@ -1,0 +1,42 @@
+services:
+  weed-segmentation:
+    build:
+      context: .
+      args:
+        MODEL_FILE: ${MODEL_FILE:-weed_segmentation_S-TTA.pth}
+    image: weed-segmentation:latest
+    container_name: weed-segmentation
+    environment:
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-8}
+      MAX_IMAGE_DIM: ${MAX_IMAGE_DIM:-256}
+      RESULT_TTL_MINUTES: ${RESULT_TTL_MINUTES:-60}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
+      FLASK_ENV: ${FLASK_ENV:-production}
+    volumes:
+      - uploads:/app/uploads
+      - results:/app/results
+      - logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: weed-nginx
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      weed-segmentation:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  uploads:
+  results:
+  logs:

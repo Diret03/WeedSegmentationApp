@@ -83,3 +83,10 @@ config.local.py
 # Archivos de backup
 *.bak
 *.backup
+
+# Local env overrides
+.env
+.env.local
+
+# Test fixture, not needed in the image
+appTest.png

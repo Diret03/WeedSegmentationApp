@@ -2,21 +2,31 @@
 Professional logging configuration for Weed Segmentation Application
 """
 import logging
+import logging.handlers
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import traceback
 from functools import wraps
 import time
 import uuid
 
+# Rotation limits for the persistent log file
+LOG_MAX_BYTES = int(os.getenv('LOG_MAX_BYTES', 10 * 1024 * 1024))
+LOG_BACKUP_COUNT = int(os.getenv('LOG_BACKUP_COUNT', 5))
+
+
+def utc_now_iso():
+    """Current UTC time as an ISO-8601 string with a Z suffix"""
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
 class JsonFormatter(logging.Formatter):
     """Custom JSON formatter for structured logging"""
     
     def format(self, record):
         log_entry = {
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': utc_now_iso(),
             'level': record.levelname,
             'logger': record.name,
             'message': record.getMessage(),
@@ -61,9 +71,11 @@ def setup_logging(app_name="weed_segmentation", log_level=logging.INFO, log_file
         log_file: Optional log file path
     """
     
-    # Create logs directory if it doesn't exist
+    # Create logs directory if the path has one
     if log_file:
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
     
     # Root logger
     root_logger = logging.getLogger()
@@ -88,9 +100,14 @@ def setup_logging(app_name="weed_segmentation", log_level=logging.INFO, log_file
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
     
-    # File handler for persistent logging
+    # Rotating file handler so the log cannot fill the disk
     if log_file:
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding='utf-8'
+        )
         file_handler.setLevel(logging.DEBUG)  # Log everything to file
         file_handler.setFormatter(JsonFormatter())
         root_logger.addHandler(file_handler)
@@ -138,7 +155,7 @@ class CustomException(Exception):
         super().__init__(message)
         self.error_code = error_code
         self.context = context or {}
-        self.timestamp = datetime.utcnow().isoformat()
+        self.timestamp = utc_now_iso()
 
 class ValidationError(CustomException):
     """Exception for validation failures"""
@@ -267,7 +284,7 @@ def create_error_response(error_code, message, details=None, request_id=None):
             'code': error_code,
             'message': message,
             'details': details or {},
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': utc_now_iso(),
             'request_id': request_id
         }
     }
@@ -277,7 +294,7 @@ def create_success_response(data, message=None, request_id=None):
     response = {
         'success': True,
         'data': data,
-        'timestamp': datetime.utcnow().isoformat() + 'Z'
+        'timestamp': utc_now_iso()
     }
     
     if message:

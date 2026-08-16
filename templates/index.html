@@ -3,571 +3,360 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automatic Weed Segmentation in Potato Crops</title>
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='potato.svg') }}">
-    <link rel="stylesheet" href="{{url_for('static',filename='dist/output.css')}}">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-
-    <!-- Google Fonts - Modern and attractive fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Comfortaa:wght@300;400;500;600;700&family=Nunito:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-    <style>
-        /* Apply modern and attractive fonts */
-        * {
-            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-
-        h1, h2, h3, h4, h5, h6 {
-            font-family: 'Comfortaa', cursive;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-        }
-
-        .title-pretty {
-            font-family: 'Comfortaa', cursive;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-
-        .subtitle-pretty {
-            font-family: 'Nunito', sans-serif;
-            font-weight: 500;
-            letter-spacing: 0.3px;
-        }
-
-        .text-cute {
-            font-family: 'Nunito', sans-serif;
-            font-weight: 400;
-        }
-
-        .mono-font {
-            font-family: 'Courier New', monospace;
-            font-weight: 500;
-        }
-
-        .drop-zone {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .drop-zone:hover, .drop-zone.drag-over {
-            transform: scale(1.02);
-            box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
-        }
-
-        .image-hover:hover {
-            transform: scale(1.02);
-        }
-
-        .gradient-bg {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        }
-
-        .loading-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: .5; }
-        }
-
-        .fade-in {
-            animation: fadeIn 0.5s ease-in-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Progressive reveal of the segmentation overlay, done in the browser
-           instead of shipping one rendered frame per step from the server */
-        .reveal-stack {
-            position: relative;
-        }
-
-        .reveal-stack img {
-            display: block;
-            width: 100%;
-            height: auto;
-        }
-
-        .reveal-overlay {
-            position: absolute;
-            inset: 0;
-            clip-path: circle(0% at 50% 50%);
-        }
-
-        .reveal-overlay.revealing {
-            transition: clip-path 2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .reveal-overlay.revealed {
-            clip-path: circle(75% at 50% 50%);
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .reveal-overlay.revealing {
-                transition: none;
-            }
-        }
-
-        /* Colors for segmentation classes */
-        .color-background { background-color: #000000; } /* Black */
-        .color-cow-tongue { background-color: #0000FF; } /* Blue */
-        .color-dandelion { background-color: #FFA500; } /* Orange */
-        .color-kikuyo { background-color: #FFFF00; } /* Yellow */
-        .color-other-weeds { background-color: #800080; } /* Purple */
-        .color-potato { background-color: #008000; } /* Green */
-    </style>
+    <title>Weed Segmentation — Potato Crops</title>
+    <meta name="description" content="Pixel-wise weed segmentation for potato crop tiles.">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='potato.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dist/output.css') }}">
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <!-- Navigation -->
-    <nav class="bg-gradient-to-r from-emerald-600 to-emerald-700 shadow-lg">
-        <div class="container mx-auto px-4">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
-                    <i class="fas fa-seedling text-white text-2xl mr-3"></i>
-                    <h1 class="text-white text-xl font-bold">Weed Segmentation - Potato Crops</h1>
+<body>
+
+<header class="masthead">
+    <div class="masthead-inner">
+        <div class="wordmark">
+            <b>Weed Segmentation</b>
+            <span>Potato crops</span>
+        </div>
+        <div class="status" id="status" data-state="unknown">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="statusText">checking model…</span>
+        </div>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <div class="intro">
+        <h1>Segment a crop tile</h1>
+        <p>
+            Pixel-wise classification of four weed species, the potato crop and bare ground.
+            EfficientNetV2-S with an FPN decoder, ensembled over seven test-time augmentations.
+        </p>
+    </div>
+
+    <!-- Intake and class key -->
+    <div class="grid">
+        <section class="panel">
+            <div class="panel-head">
+                <span class="label">Intake</span>
+                <span class="spec">{{ max_image_dim }}×{{ max_image_dim }} px max</span>
+            </div>
+
+            <div class="dropzone" id="dropZone" role="button" tabindex="0"
+                 aria-label="Drop a crop tile or press Enter to browse files">
+                <svg class="reticle" width="40" height="40" viewBox="0 0 40 40" fill="none"
+                     stroke="currentColor" stroke-width="1.25" aria-hidden="true">
+                    <path d="M2 12V2h10M28 2h10v10M38 28v10H28M12 38H2V28"/>
+                    <rect x="13" y="13" width="14" height="14"/>
+                    <path d="M20 8v5M20 27v5M8 20h5M27 20h5"/>
+                </svg>
+                <h2>Drop a crop tile</h2>
+                <p class="hint">or click to browse</p>
+                <p class="spec">PNG · JPG · GIF · BMP — max {{ max_upload_mb }} MB</p>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" class="hidden">
+
+            <div class="intake-foot">
+                <span class="spec">Trained on 128×128 tiles</span>
+                <a class="spec" style="color:var(--accent)"
+                   href="https://github.com/JorgePazos-git/Dataset-of-weeds-in-potato-crops-in-the-province-of-Carchi-and-Imbabura-in-/tree/main/Balanced/test/images"
+                   target="_blank" rel="noopener noreferrer">Sample tiles ↗</a>
+            </div>
+
+            <div class="progress hidden" id="loadingIndicator" role="status">
+                <div class="progress-track"><i></i></div>
+                <span class="spec">Running segmentation — 7 augmentations</span>
+            </div>
+
+            <div class="notice hidden" id="errorMessage" role="alert">
+                <code id="errorCode"></code>
+                <span id="errorText"></span>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <span class="label">Class key</span>
+                <span class="spec" id="keyState">coverage pending</span>
+            </div>
+
+            <div class="key" id="classKey">
+                {% for c in classes %}
+                <div class="key-row{% if not loop.first and c.group != classes[loop.index0 - 1].group %} group-start{% endif %}"
+                     data-class="{{ c.key }}">
+                    <span class="swatch" style="background: {{ c.hex }}"></span>
+                    <span class="key-name">{{ c.label }}</span>
+                    <span class="key-value" data-value>—</span>
+                    <span class="key-bar"><i style="background: {{ c.hex }}"></i></span>
                 </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
+    <!-- Readout -->
+    <div id="resultContainer" class="hidden">
+        <div class="metrics">
+            <div class="metric">
+                <span class="label">Weed coverage</span>
+                <span class="v" id="mWeed">—</span>
+            </div>
+            <div class="metric">
+                <span class="label">Potato area</span>
+                <span class="v" id="mPotato">—</span>
+            </div>
+            <div class="metric">
+                <span class="label">Weed types</span>
+                <span class="v" id="mTypes">—</span>
+            </div>
+            <div class="metric">
+                <span class="label">Elapsed</span>
+                <span class="v" id="mTime">—</span>
             </div>
         </div>
-    </nav>
 
-    <div class="container mx-auto px-4 py-8">
-        <div class="max-w-6xl mx-auto">
-            <!-- Header Section -->
-            <div class="text-center mb-12">
-                <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-                    Automatic Weed Detection in Potato Crops
-                </h1>
-                <p class="text-xl text-gray-600 max-w-3xl mx-auto mb-8">
-                    Artificial intelligence system specialized in the identification and segmentation of weeds in potato crops using deep learning technology.
-                </p>
-
-                <!-- Information about detected classes -->
-                <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
-                    <h2 class="text-2xl font-semibold text-gray-800 mb-6 flex items-center justify-center">
-                        <i class="fas fa-eye mr-3 text-emerald-500"></i>
-                        Automatic Detection Classes
-                    </h2>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-background mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Background</span>
-                        </div>
-                        <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-cow-tongue mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Cow-tongue</span>
-                        </div>
-                        <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-dandelion mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Dandelion</span>
-                        </div>
-                        <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-kikuyo mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Kikuyo</span>
-                        </div>
-                        <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-other-weeds mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Other Weeds</span>
-                        </div>
-                        <div class="flex flex-col items-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                            <div class="w-8 h-8 rounded-full color-potato mb-2"></div>
-                            <span class="text-sm font-medium text-gray-700">Potato</span>
-                        </div>
+        <div class="plates">
+            <section class="plate">
+                <span class="label">Source tile</span>
+                <figure>
+                    <img id="originalImage" src="" alt="Uploaded crop tile">
+                </figure>
+            </section>
+            <section class="plate">
+                <span class="label">Segmentation</span>
+                <figure>
+                    <div class="reveal-stack" id="revealStack">
+                        <img id="baseImage" src="" alt="">
+                        <img id="segmentedImage" class="reveal-overlay" src=""
+                             alt="Segmentation overlay of the uploaded tile">
                     </div>
-                </div>
-            </div>
+                </figure>
+            </section>
+        </div>
 
-            <!-- Upload Section -->
-            <div class="bg-white rounded-2xl shadow-xl p-8 mb-8">
-                <div class="drop-zone border-2 border-dashed border-blue-300 rounded-xl p-16 text-center bg-blue-50 cursor-pointer transition-all duration-300" id="dropZone">
-                    <i class="fas fa-cloud-upload-alt text-6xl text-blue-500 mb-6"></i>
-                    <h3 class="text-2xl font-semibold text-gray-800 mb-2">Drag and drop your crop image here</h3>
-                    <p class="text-gray-600 mb-2">or click to browse files</p>
-                    <p class="text-sm text-gray-500">Supported formats: JPG, PNG, GIF, BMP (Max. {{ max_upload_mb }}MB, {{ max_image_dim }}x{{ max_image_dim }} pixels)</p>
-                    <p class="text-xs text-emerald-600 mt-2 font-medium">
-                        <i class="fas fa-info-circle mr-1"></i>
-                        Optimized for 128x128 pixel images of potato crops with weeds
-                    </p>
-                </div>
-                <input type="file" id="fileInput" accept="image/*" class="hidden">
-                
-                <!-- Dataset Link -->
-                <div class="mt-6 text-center">
-                    <p class="text-base text-blue-600 font-medium">
-                        <a href="https://github.com/JorgePazos-git/Dataset-of-weeds-in-potato-crops-in-the-province-of-Carchi-and-Imbabura-in-/tree/main/Balanced/test/images"
-                           target="_blank"
-                           rel="noopener noreferrer" >
-                            <i class="fas fa-external-link-alt mr-1"></i>
-                             Test images (128x128 pixels) from our dataset
-                        </a>
-                    </p>
-                </div>
-
-                <!-- Loading Indicator -->
-                <div class="loading-spinner hidden mt-8" id="loadingSpinner">
-                    <div class="flex flex-col items-center justify-center py-8">
-                        <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-emerald-500 mb-4"></div>
-                        <p class="text-lg text-gray-700 loading-pulse">Analyzing image with specialized AI...</p>
-                        <p class="text-sm text-gray-500 mt-2">Detecting weeds and potato plants</p>
-                    </div>
-                </div>
-
-                <!-- Error Message -->
-                <div class="error-message hidden mt-6" id="errorMessage">
-                    <div class="bg-red-500 text-white p-4 rounded-lg">
-                        <div class="flex items-center">
-                            <i class="fas fa-exclamation-circle mr-2"></i>
-                            <span id="errorText"></span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Results Section -->
-            <div class="result-container hidden fade-in" id="resultContainer">
-                <!-- Statistics Card -->
-                <div class="gradient-bg text-white rounded-2xl p-8 mb-8 shadow-lg">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
-                        <div class="flex flex-col items-center">
-                            <i class="fas fa-image text-4xl mb-2"></i>
-                            <h3 class="text-lg font-semibold">Processed Image</h3>
-                            <p class="text-emerald-100">Analysis complete</p>
-                        </div>
-                        <div class="flex flex-col items-center">
-                            <i class="fas fa-seedling text-4xl mb-2"></i>
-                            <h3 class="text-lg font-semibold" id="weedCount">Weeds Detected</h3>
-                            <p class="text-emerald-100">Automatic identification</p>
-                        </div>
-                        <div class="flex flex-col items-center">
-                            <i class="fas fa-leaf text-4xl mb-2"></i>
-                            <h3 class="text-lg font-semibold" id="potatoCount">Potato Plants</h3>
-                            <p class="text-emerald-100">Main crop</p>
-                        </div>
-                        <div class="flex flex-col items-center">
-                            <i class="fas fa-clock text-4xl mb-2"></i>
-                            <h3 class="text-lg font-semibold" id="processingTime">Processing Time</h3>
-                            <p class="text-emerald-100">Processing Time</p>
-{#                            <p class="text-emerald-100">Ultra-fast AI</p>#}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Detailed detection information -->
-                <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
-                    <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                        <i class="fas fa-chart-pie text-emerald-500 mr-2"></i>
-                        Detection Summary by Class
-                    </h3>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="classStats">
-                        <!-- Will be dynamically filled with JavaScript -->
-                    </div>
-                </div>
-
-                <!-- Image Comparison -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                    <!-- Original Image -->
-                    <div class="bg-white rounded-2xl shadow-lg p-6 image-hover transition-transform duration-300">
-                        <h3 class="text-xl font-semibold text-gray-800 mb-4 text-center">
-                            <i class="fas fa-image text-blue-500 mr-2"></i>
-                            Original Crop Image
-                        </h3>
-                        <div class="rounded-xl overflow-hidden shadow-md">
-                            <img id="originalImage" src="" alt="Original Crop Image" class="w-full h-auto max-h-96 object-contain">
-                        </div>
-                    </div>
-
-                    <!-- Segmented Image -->
-                    <div class="bg-white rounded-2xl shadow-lg p-6 image-hover transition-transform duration-300">
-                        <h3 class="text-xl font-semibold text-gray-800 mb-4 text-center">
-                            <i class="fas fa-magic text-emerald-500 mr-2"></i>
-                            AI Segmentation
-                        </h3>
-                        <div class="rounded-xl overflow-hidden shadow-md reveal-stack" id="revealStack">
-                            <img id="baseImage" src="" alt="Original Crop Image">
-                            <img id="segmentedImage" src="" alt="Segmented Image" class="reveal-overlay">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="text-center space-x-4">
-                    <button class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-4 px-8 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg" id="downloadBtn">
-                        <i class="fas fa-download mr-2"></i>
-                        Download Result
-                    </button>
-                    <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg" id="newImageBtn">
-                        <i class="fas fa-plus mr-2"></i>
-                        Analyze Another Image
-                    </button>
-                </div>
-            </div>
+        <div class="actions">
+            <button class="btn btn-primary" id="downloadBtn">Download result</button>
+            <button class="btn" id="newImageBtn">Analyze another tile</button>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-gray-300 py-8 mt-16">
-        <div class="container mx-auto px-4 text-center">
-            <p>&copy; 2025 Weed Segmentation System in Potato Crops.</p>
-            <p class="text-sm text-gray-400 mt-2">
-                Specialized in the detection of Cow-tongue, Dandelion, Kikuyu and other common weeds.
-            </p>
-        </div>
-    </footer>
+</main>
 
-    <script>
-        let currentFile = null;
-        let processingStartTime = null;
+<footer>
+    <div class="wrap">
+        <span class="spec">Weed segmentation in potato crops — Carchi &amp; Imbabura dataset</span>
+        <span class="spec">Cow-tongue · Dandelion · Kikuyo · Other weeds</span>
+    </div>
+</footer>
 
-        // Limits come from the server so client and backend cannot drift apart
-        const MAX_UPLOAD_BYTES = {{ max_upload_mb }} * 1024 * 1024;
-        const MAX_IMAGE_DIM = {{ max_image_dim }};
+<script>
+    // Limits come from the server so client and backend cannot drift apart
+    const MAX_UPLOAD_BYTES = {{ max_upload_mb }} * 1024 * 1024;
+    const MAX_IMAGE_DIM = {{ max_image_dim }};
+    const MAX_UPLOAD_MB = {{ max_upload_mb }};
 
-        // Color definition for each class
-        const classColors = {
-            'background': '#000000',  // Black
-            'cow_tongue': '#0000FF',  // Blue
-            'dandelion': '#FFA500',  // Orange
-            'kikuyo': '#FFFF00',  // Yellow
-            'other_weeds': '#800080',  // Purple
-            'potato': '#008000'  // Green
-        };
+    let currentFile = null;
+    let processingStartTime = null;
 
-        const classNames = {
-            'background': 'Background',
-            'cow_tongue': 'Cow-tongue',
-            'dandelion': 'Dandelion',
-            'kikuyo': 'Kikuyo',
-            'other_weeds': 'Other Weeds',
-            'potato': 'Potato'
-        };
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('errorMessage');
+    const errorText = document.getElementById('errorText');
+    const errorCode = document.getElementById('errorCode');
+    const resultContainer = document.getElementById('resultContainer');
+    const originalImage = document.getElementById('originalImage');
+    const segmentedImage = document.getElementById('segmentedImage');
+    const baseImage = document.getElementById('baseImage');
+    const revealStack = document.getElementById('revealStack');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const newImageBtn = document.getElementById('newImageBtn');
+    const classKey = document.getElementById('classKey');
+    const keyState = document.getElementById('keyState');
 
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('fileInput');
-        const loadingSpinner = document.getElementById('loadingSpinner');
-        const errorMessage = document.getElementById('errorMessage');
-        const errorText = document.getElementById('errorText');
-        const resultContainer = document.getElementById('resultContainer');
-        const originalImage = document.getElementById('originalImage');
-        const segmentedImage = document.getElementById('segmentedImage');
-        const baseImage = document.getElementById('baseImage');
-        const revealStack = document.getElementById('revealStack');
-        const downloadBtn = document.getElementById('downloadBtn');
-        const newImageBtn = document.getElementById('newImageBtn');
-        const processingTimeElement = document.getElementById('processingTime');
-        const weedCount = document.getElementById('weedCount');
-        const potatoCount = document.getElementById('potatoCount');
-        const classStats = document.getElementById('classStats');
+    // ---- model status -------------------------------------------------
 
-        // Click to browse files
-        dropZone.addEventListener('click', () => fileInput.click());
+    fetch('/health')
+        .then(r => r.json().then(d => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => setStatus(ok ? 'ready' : 'down',
+            ok ? `model ready · ${d.device}` : 'model unavailable'))
+        .catch(() => setStatus('down', 'model unreachable'));
 
-        // Drag and drop functionality
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-        });
+    function setStatus(state, text) {
+        const el = document.getElementById('status');
+        el.dataset.state = state;
+        document.getElementById('statusText').textContent = text;
+    }
 
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('drag-over');
-        });
+    // ---- intake -------------------------------------------------------
 
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+    });
 
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFile(files[0]);
-            }
-        });
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
 
-        // File input change
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFile(e.target.files[0]);
-            }
-        });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 
-        function handleFile(file) {
-            // Validate file type
-            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp'];
-            if (!allowedTypes.includes(file.type)) {
-                showError('Please select a valid image file (JPG, PNG, GIF, BMP)');
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp'];
+        if (!allowedTypes.includes(file.type)) {
+            showError('Select a PNG, JPG, GIF or BMP image.');
+            return;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+            showError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is ${MAX_UPLOAD_MB} MB.`);
+            return;
+        }
+        validateImageDimensions(file);
+    }
+
+    function validateImageDimensions(file) {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+
+        img.onload = function () {
+            URL.revokeObjectURL(url);
+            if (this.width > MAX_IMAGE_DIM || this.height > MAX_IMAGE_DIM) {
+                showError(`That tile is ${this.width}×${this.height}. Resize it to ${MAX_IMAGE_DIM}×${MAX_IMAGE_DIM} or smaller and try again.`);
                 return;
             }
+            uploadFile(file);
+        };
 
-            // Validate file size against the server limit
-            if (file.size > MAX_UPLOAD_BYTES) {
-                showError(`File size must be less than {{ max_upload_mb }}MB`);
-                return;
-            }
+        img.onerror = function () {
+            URL.revokeObjectURL(url);
+            showError('That file could not be read as an image.');
+        };
 
-            // Validate image dimensions
-            validateImageDimensions(file);
-        }
+        img.src = url;
+    }
 
-        function validateImageDimensions(file) {
-            const img = new Image();
-            const url = URL.createObjectURL(file);
-            
-            img.onload = function() {
-                URL.revokeObjectURL(url);
-                
-                // Check the image against the server's dimension limit
-                if (this.width > MAX_IMAGE_DIM || this.height > MAX_IMAGE_DIM) {
-                    showError(`Image dimensions (${this.width}x${this.height}) exceed the maximum allowed size of ${MAX_IMAGE_DIM}x${MAX_IMAGE_DIM} pixels. Please resize your image and try again.`);
-                    return;
-                }
-                
-                // Dimensions are valid, proceed with upload
-                uploadFile(file);
-            };
-            
-            img.onerror = function() {
-                URL.revokeObjectURL(url);
-                showError('Unable to read image file. Please select a valid image.');
-            };
-            
-            img.src = url;
-        }
+    function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
 
-        function uploadFile(file) {
-            const formData = new FormData();
-            formData.append('file', file);
+        hideError();
+        hideResults();
+        loadingIndicator.classList.remove('hidden');
+        processingStartTime = Date.now();
 
-            // Show loading status
-            hideError();
-            hideResults();
-            showLoading();
-            processingStartTime = Date.now();
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
+        fetch('/upload', { method: 'POST', body: formData })
             .then(response => response.json())
             .then(data => {
-                hideLoading();
-
+                loadingIndicator.classList.add('hidden');
                 if (data.success) {
-                    showResults(data);
+                    showResults(data.data);
                 } else {
-                    // Handle both old and new error formats
-                    const errorMessage = data.error?.message || data.error || 'Processing error';
-                    showError(errorMessage);
+                    showError(data.error?.message || 'Processing failed.', data.error?.code);
                 }
             })
             .catch(error => {
-                hideLoading();
-                showError('Network error: ' + error.message);
+                loadingIndicator.classList.add('hidden');
+                showError('Could not reach the server: ' + error.message);
             });
-        }
+    }
 
-        function showResults(response) {
-            // Handle both old and new response formats for backward compatibility
-            const data = response.data || response; // New format has nested .data
-            
-            currentFile = data.filename;
+    // ---- readout ------------------------------------------------------
 
-            // Show original image
-            originalImage.src = data.original_image;
+    function showResults(data) {
+        currentFile = data.filename;
 
-            // Calculate processing time
-            const processingTime = ((Date.now() - processingStartTime) / 1000).toFixed(1);
-            processingTimeElement.innerHTML = `${processingTime}s`;
+        originalImage.src = data.original_image;
+        playSegmentationAnimation(data.original_image, data.segmented_image);
 
-            // Update statistics if available
-            if (data.class_stats) {
-                updateClassStats(data.class_stats);
-                weedCount.innerHTML = `${data.class_stats.total_weeds || 0} types`;
-                potatoCount.innerHTML = `${data.class_stats.potato_area || 'N/A'}`;
-            }
+        const elapsed = ((Date.now() - processingStartTime) / 1000).toFixed(1);
+        document.getElementById('mTime').textContent = `${elapsed}s`;
 
-            // Reveal the segmentation over the original image
-            playSegmentationAnimation(data.original_image, data.segmented_image);
+        const stats = data.class_stats || {};
+        document.getElementById('mWeed').textContent = stats.weed_coverage ?? '—';
+        document.getElementById('mPotato').textContent = stats.potato_area ?? '—';
+        document.getElementById('mTypes').textContent = stats.total_weeds ?? '—';
 
-            // Show results with animation
-            resultContainer.classList.remove('hidden');
-            resultContainer.scrollIntoView({ behavior: 'smooth' });
-        }
+        updateClassKey(stats);
 
-        function playSegmentationAnimation(baseSrc, overlaySrc) {
-            baseImage.src = baseSrc;
-            segmentedImage.src = overlaySrc;
+        resultContainer.classList.remove('hidden');
+        resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 
-            // Restart from a closed circle on every run
-            segmentedImage.classList.remove('revealing', 'revealed');
-
-            segmentedImage.onload = () => {
-                // Two frames so the browser paints the closed state before easing open
-                requestAnimationFrame(() => requestAnimationFrame(() => {
-                    segmentedImage.classList.add('revealing', 'revealed');
-                }));
-            };
-
-            segmentedImage.addEventListener('transitionend', () => {
-                revealStack.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.8)';
-                setTimeout(() => { revealStack.style.boxShadow = ''; }, 1000);
-            }, { once: true });
-        }
-
-        function updateClassStats(stats) {
-            classStats.innerHTML = '';
-
-            Object.keys(classNames).forEach(className => {
-                const percentage = stats[className] || 0;
-                const div = document.createElement('div');
-                div.className = 'flex flex-col items-center p-3 rounded-lg bg-gray-50';
-                div.innerHTML = `
-                    <div class="w-8 h-8 rounded-full mb-2" style="background-color: ${classColors[className]}"></div>
-                    <span class="text-base font-medium text-gray-700">${classNames[className]}</span>
-                    <span class="text-base text-gray-500">${percentage.toFixed(1)}%</span>
-                `;
-                classStats.appendChild(div);
-            });
-        }
-
-        function showLoading() {
-            loadingSpinner.classList.remove('hidden');
-        }
-
-        function hideLoading() {
-            loadingSpinner.classList.add('hidden');
-        }
-
-        function showError(message) {
-            errorText.textContent = message;
-            errorMessage.classList.remove('hidden');
-        }
-
-        function hideError() {
-            errorMessage.classList.add('hidden');
-        }
-
-        function hideResults() {
-            resultContainer.classList.add('hidden');
-            segmentedImage.classList.remove('revealing', 'revealed');
-        }
-
-        // Download functionality
-        downloadBtn.addEventListener('click', () => {
-            if (currentFile) {
-                window.open(`/download/result_${currentFile}`, '_blank');
-            }
+    // Percentages fill the legend itself, so identity and magnitude stay in
+    // one place instead of being repeated in a separate stats block.
+    function updateClassKey(stats) {
+        let peak = 0;
+        classKey.querySelectorAll('.key-row').forEach(row => {
+            const pct = Number(stats[row.dataset.class]) || 0;
+            if (pct > peak) peak = pct;
         });
 
-        // Process new image
-        newImageBtn.addEventListener('click', () => {
-            hideResults();
-            hideError();
-            fileInput.value = '';
-            currentFile = null;
+        classKey.querySelectorAll('.key-row').forEach(row => {
+            const pct = Number(stats[row.dataset.class]) || 0;
+            row.querySelector('[data-value]').textContent = `${pct.toFixed(1)}%`;
+            // Scale to the largest class so minority weeds stay readable
+            const width = peak > 0 ? Math.max(pct > 0 ? 2 : 0, (pct / peak) * 100) : 0;
+            row.querySelector('.key-bar > i').style.width = `${width}%`;
         });
-    </script>
+
+        keyState.textContent = 'coverage, % of tile';
+    }
+
+    function playSegmentationAnimation(baseSrc, overlaySrc) {
+        baseImage.src = baseSrc;
+        segmentedImage.src = overlaySrc;
+        segmentedImage.classList.remove('revealing', 'revealed');
+
+        segmentedImage.onload = () => {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                segmentedImage.classList.add('revealing', 'revealed');
+            }));
+        };
+    }
+
+    // ---- states -------------------------------------------------------
+
+    function showError(message, code) {
+        errorText.textContent = message;
+        errorCode.textContent = code || '';
+        errorMessage.classList.remove('hidden');
+    }
+
+    function hideError() {
+        errorMessage.classList.add('hidden');
+    }
+
+    function hideResults() {
+        resultContainer.classList.add('hidden');
+        segmentedImage.classList.remove('revealing', 'revealed');
+    }
+
+    downloadBtn.addEventListener('click', () => {
+        if (currentFile) window.open(`/download/result_${currentFile}`, '_blank');
+    });
+
+    newImageBtn.addEventListener('click', () => {
+        hideResults();
+        hideError();
+        fileInput.value = '';
+        currentFile = null;
+        classKey.querySelectorAll('.key-row').forEach(row => {
+            row.querySelector('[data-value]').textContent = '—';
+            row.querySelector('.key-bar > i').style.width = '0';
+        });
+        keyState.textContent = 'coverage pending';
+        dropZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+</script>
 </body>
 </html>

@@ -7,7 +7,9 @@ import uuid
 from PIL import Image
 
 # Import prediction logic
-from weed_predictor import WeedSegmentationPredictor, CLASS_NAMES
+from weed_predictor import (
+    WeedSegmentationPredictor, CLASS_NAMES, CLASS_NAMES_EN, CLASS_COLORS
+)
 
 # Import professional logging
 from logger_config import (
@@ -75,12 +77,45 @@ except Exception:
     segmentation_model = None
 
 
+# Weeds first, then the crop, then the ground: the grouping is real and the
+# legend is ordered by it.
+CLASS_GROUPS = {
+    'cow_tongue': 'weed',
+    'dandelion': 'weed',
+    'kikuyo': 'weed',
+    'other_weeds': 'weed',
+    'potato': 'crop',
+    'background': 'ground'
+}
+_GROUP_ORDER = {'weed': 0, 'crop': 1, 'ground': 2}
+
+
+def class_palette():
+    """
+    Class name, label and overlay color for the front end.
+
+    Colors are derived from CLASS_COLORS so the legend can never drift from
+    the rendered overlay; CLASS_COLORS is BGR because OpenCV draws it.
+    """
+    palette = []
+    for class_id, key in CLASS_NAMES.items():
+        blue, green, red = CLASS_COLORS[class_id]
+        palette.append({
+            'key': key,
+            'label': CLASS_NAMES_EN.get(key, key),
+            'hex': f'#{red:02X}{green:02X}{blue:02X}',
+            'group': CLASS_GROUPS.get(key, 'weed')
+        })
+    return sorted(palette, key=lambda c: _GROUP_ORDER.get(c['group'], 9))
+
+
 @app.route('/')
 def index():
     return render_template(
         'index.html',
         max_upload_mb=app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024),
-        max_image_dim=app.config['MAX_IMAGE_DIM']
+        max_image_dim=app.config['MAX_IMAGE_DIM'],
+        classes=class_palette()
     )
 
 

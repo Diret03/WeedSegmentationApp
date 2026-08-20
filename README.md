@@ -6,6 +6,12 @@ Deep learning system for identifying and segmenting weeds in potato crops. It us
 Pyramid Network (FPN) with an EfficientNetV2-S backbone, attention modules, ASPP and Test-Time
 Augmentation, served through a Flask web interface.
 
+**Live app: <https://appweedsegmentantion.azurewebsites.net/>** — deployed on Azure App Service,
+inference on CPU. The pill in the masthead mirrors `/health`, so you can see whether the checkpoint
+loaded before you upload anything.
+
+![Intake screen of the live app: dropzone on the left, class key on the right](docs/screenshots/intake.png)
+
 ## 🎯 Features
 
 - **Multi-class segmentation**: 6 classes covering the potato crop and 4 weed types
@@ -27,6 +33,19 @@ Augmentation, served through a Flask web interface.
 | **Potato** | Main crop | Green |
 
 Colors are defined once in `CLASS_COLORS` (`weed_predictor.py`), in BGR because OpenCV renders the overlay.
+
+## 🖼️ Interface
+
+Drop a tile into the intake panel and the readout appears below it: the class key on the right fills
+in with per-class coverage, the metric row summarises the tile, and the overlay is wiped over the
+source image with a clip-path reveal.
+
+![Result readout: coverage per class, summary metrics, and the source tile beside its segmentation overlay](docs/screenshots/readout.png)
+
+Above is a 128×128 test tile from the Carchi & Imbabura dataset. The model marked 3.0 % kikuyo
+(yellow) and 2.2 % dandelion (orange) — 5.2 % weed coverage across two weed types, no potato in
+this tile — and returned in 14.1 s end to end on the deployed CPU instance, all seven test-time
+augmentations included.
 
 ## 🚀 Quick start with Docker
 
@@ -117,6 +136,11 @@ Every setting is read from the environment. See `.env.example` for the full list
 model was trained on 128×128 crops, so full-field photographs would produce unreliable
 segmentations. Use the [test images from the dataset](https://github.com/JorgePazos-git/Dataset-of-weeds-in-potato-crops-in-the-province-of-Carchi-and-Imbabura-in-/tree/main/Balanced/test/images).
 
+![An oversized tile rejected in the intake panel before it is uploaded](docs/screenshots/size-limit.png)
+
+The browser measures the image and refuses it before a single byte is sent; `/upload` repeats the
+check and answers with `FILE_005` for anything that reaches it directly.
+
 ## 🔌 API
 
 | Endpoint | Method | Description |
@@ -170,6 +194,7 @@ WeedSegmentationApp/
 ├── docker-compose.yml      # App + Nginx
 ├── nginx.conf              # Reverse proxy configuration
 ├── .env.example            # Documented configuration defaults
+├── docs/screenshots/       # Screenshots of the live app, used by this README
 ├── models/                 # Trained checkpoints
 ├── static/                 # potato.svg, style.css, dist/output.css
 ├── templates/
